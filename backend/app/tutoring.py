@@ -121,6 +121,20 @@ async def run_action(app, run_id, action):
         }
         if chapter:
             context["chapter"] = {k: chapter[k] for k in ("title", "state", "question_index")}
+            context["course_outline"] = store.all(
+                "SELECT title,parent_id,id,start_page,end_page FROM chapters WHERE space_id=? ORDER BY position LIMIT 200",
+                (run["space_id"],),
+            )
+            prerequisites = store.all(
+                "SELECT * FROM chapters WHERE space_id=? AND document_id=? AND is_group=0 AND position<? ORDER BY position DESC LIMIT 2",
+                (run["space_id"], chapter["document_id"], chapter["position"]),
+            )
+            context["prerequisites"] = []
+            for prerequisite in reversed(prerequisites):
+                found = retrieve(store, run["space_id"], prerequisite["title"], prerequisite, limit=1)
+                context["prerequisites"].append({"title": prerequisite["title"], "evidence": found})
+                existing = {p["id"] for p in evidence}
+                evidence.extend(p for p in found if p["id"] not in existing)
             context["mode"] = store.one("SELECT mode FROM spaces WHERE id=?", (run["space_id"],))["mode"]
 
             def search(query):
@@ -134,6 +148,8 @@ async def run_action(app, run_id, action):
         question_value = json.loads(question["payload"]) if question else None
         context["current_question"] = public_question(question)
         feedback = None
+        selected_option = action.selected_option
+        reasoning = action.text if selected_option else ""
         lesson = None
         disputed_attempt = None
         result = {}
@@ -168,10 +184,15 @@ async def run_action(app, run_id, action):
                 if not disputed_attempt:
                     raise ModelError("这次作答已复核或没有待复核作答；可换题验证或跳过")
                 answer = disputed_attempt["answer"]
-            if not answer.strip():
+                selected_option = disputed_attempt["selected_option"]
+                reasoning = disputed_attempt["reasoning"]
+            if not answer.strip() and not selected_option:
                 raise ModelError("请先填写回答")
             if question_value["kind"] == "choice":
-                correct = answer == question_value["answer"]
+                selected_option = selected_option or answer
+                if selected_option not in question_value["options"]:
+                    raise ModelError("请选择题目中的一个选项，理由请单独填写")
+                correct = selected_option == question_value["answer"]
                 feedback = {
                     "verdict": "correct" if correct else "incorrect",
                     "explanation": question_value["rubric"],
@@ -179,16 +200,42 @@ async def run_action(app, run_id, action):
                     "next_step": "继续学习" if correct else "试着结合提示重新理解",
                     "sources": question_value["sources"],
                 }
+                if reasoning.strip():
+                    context.update(
+                        question=question_value,
+                        answer=selected_option,
+                        selected_option=selected_option,
+                        reasoning=reasoning,
+                        review=action.action == "retry_grade",
+                    )
+                    result, usage = await provider.generate("grade", context, progress)
+                    feedback = Feedback.model_validate(result).model_dump()
+                    validate_sources(feedback, evidence)
+                    # Option correctness is deterministic. A right guess with faulty reasoning
+                    # is not recorded as independent mastery.
+                    feedback["verdict"] = (
+                        ("partial" if feedback["verdict"] == "incorrect" else feedback["verdict"])
+                        if correct
+                        else "incorrect"
+                    )
+                answer = selected_option + ("\n理由：" + reasoning if reasoning else "")
             elif question_value["kind"] == "number":
                 match = re.fullmatch(r"\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*(.*?)\s*", answer)
+                if match and match[2] != question_value["unit"] and re.search(r"[=+\\$*/^()]|\n", match[2]):
+                    match = None
                 if not match:
-                    feedback = {
-                        "verdict": "uncertain",
-                        "explanation": "请填写数值和题目要求的单位。",
-                        "missing": [],
-                        "next_step": "检查输入格式后重试",
-                        "sources": question_value["sources"],
-                    }
+                    context.update(
+                        question=question_value, answer=answer, review=action.action == "retry_grade"
+                    )
+                    result, usage = await provider.generate("grade", context, progress)
+                    feedback = Feedback.model_validate(result).model_dump()
+                    validate_sources(feedback, evidence)
+                    if re.search(r"(?i)(i (?:do not|don't) know|不知道|不会|不清楚)", answer):
+                        feedback.update(
+                            verdict="uncertain",
+                            explanation="还没有可核对的计算答案。",
+                            next_step="可以查看提示，或跳过继续学习",
+                        )
                 else:
                     correct = (
                         math.isclose(
@@ -234,6 +281,12 @@ async def run_action(app, run_id, action):
             if not current or current["status"] != "running":
                 return
             if lesson:
+                if (
+                    run["scope"].startswith("prepare:")
+                    and db.execute("SELECT lesson FROM chapters WHERE id=?", (chapter["id"],)).fetchone()[0]
+                ):
+                    db.execute("UPDATE runs SET status='done',completed=? WHERE id=?", (now(), run_id))
+                    return
                 payload = {k: v for k, v in lesson.items() if k != "questions"}
                 offset = db.execute(
                     "SELECT COUNT(*) FROM questions WHERE chapter_id=?", (chapter["id"],)
@@ -250,6 +303,12 @@ async def run_action(app, run_id, action):
                     "UPDATE chapters SET lesson=?,question_index=?,hint_used=0,revealed=0,state='已学习，待验证' WHERE id=?",
                     (dumps(payload), offset, chapter["id"]),
                 )
+                db.execute(
+                    "UPDATE chapters SET preparation='ready',preparation_error=NULL WHERE id=?",
+                    (chapter["id"],),
+                )
+                if run["scope"].startswith("prepare:"):
+                    db.execute("UPDATE chapters SET state='未学习' WHERE id=?", (chapter["id"],))
             if feedback:
                 if disputed_attempt:
                     # Preserve original verdict and store a separate reviewed attempt.
@@ -258,11 +317,14 @@ async def run_action(app, run_id, action):
                     db.execute("UPDATE attempts SET reviewed=1 WHERE id=?", (disputed_attempt["id"],))
                 else:
                     assisted = int(bool(chapter["hint_used"] or chapter["revealed"]))
-                    answer = action.text
                 attempt_id = uid()
                 db.execute(
                     "INSERT INTO attempts(id,chapter_id,question_id,answer,feedback,assisted,disputed,created) VALUES(?,?,?,?,?,?,?,?)",
                     (attempt_id, chapter["id"], question["id"], answer, dumps(feedback), assisted, 0, now()),
+                )
+                db.execute(
+                    "UPDATE attempts SET selected_option=?,reasoning=? WHERE id=?",
+                    (selected_option, reasoning, attempt_id),
                 )
                 if disputed_attempt:
                     db.execute(
@@ -286,21 +348,26 @@ async def run_action(app, run_id, action):
                 or (lesson and lesson["explanation"])
                 or ""
             )
-            if action.text:
+            user_text = answer if feedback else action.text
+            background = run["scope"].startswith("prepare:")
+            if user_text and not background:
                 db.execute(
                     "INSERT INTO messages VALUES(?,?,?,?,?,?,?)",
-                    (uid(), run["space_id"], thread, "user", action.text, int(action.private), now()),
+                    (uid(), run["space_id"], thread, "user", user_text, int(action.private), now()),
                 )
-            message_id = uid()
-            db.execute(
-                "INSERT INTO messages VALUES(?,?,?,?,?,?,?)",
-                (message_id, run["space_id"], thread, "assistant", text, int(action.private), now()),
-            )
-            result["message_id"] = message_id
+            if not background:
+                message_id = uid()
+                db.execute(
+                    "INSERT INTO messages VALUES(?,?,?,?,?,?,?)",
+                    (message_id, run["space_id"], thread, "assistant", text, int(action.private), now()),
+                )
+                result["message_id"] = message_id
             db.execute(
                 "UPDATE runs SET status='done',result=?,partial='',completed=?,elapsed=?,usage=? WHERE id=?",
                 (dumps(result), now(), time.monotonic() - started, dumps(usage), run_id),
             )
+        if background:
+            return
         compact_history(store, thread)
         count = store.one(
             "SELECT COUNT(*) AS n FROM messages WHERE thread=? AND role='user' AND private=0", (thread,)

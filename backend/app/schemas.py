@@ -50,6 +50,12 @@ class Reply(BaseModel):
     supplement: bool = False
 
 
+class Transcription(BaseModel):
+    text: str = Field(max_length=10000)
+    uncertain: bool = False
+    note: str = Field(default="", max_length=1000)
+
+
 class MemoryCandidate(BaseModel):
     text: str = Field(min_length=1, max_length=800)
     source_id: str
@@ -70,3 +76,5 @@ class Action(BaseModel):
     text: str = Field(default="", max_length=10000)
     request_key: str = Field(min_length=8, max_length=120)
     private: bool = False
+    selected_option: str | None = Field(default=None, max_length=4000)
+    prepare_chapter: bool = False

@@ -1335,3 +1335,70 @@ hr {
     padding-bottom: 12px;
   }
 }
+.chapter-group > summary {
+  padding: 12px 8px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.chapter-group > div {
+  border-left: 1px solid #d7e1d8;
+  margin-left: 9px;
+  padding-left: 6px;
+}
+.preparation-status {
+  padding: 8px 24px;
+  font-size: 13px;
+  color: #536f60;
+}
+.preparation-status button {
+  text-decoration: underline;
+}
+.answer-image {
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.answer-image > small {
+  margin-left: 8px;
+  color: #68796e;
+}
+.image-upload {
+  display: inline-block;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.image-upload input {
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+}
+.image-upload:focus-within {
+  outline: 2px solid #245e4b;
+}
+.image-review {
+  display: flex;
+  gap: 12px;
+  max-height: 210px;
+  overflow: auto;
+  padding: 8px 0;
+}
+.image-review img {
+  width: 90px;
+  height: 90px;
+  object-fit: contain;
+}
+.image-review > div {
+  min-width: 0;
+  flex: 1;
+}
+.image-review textarea {
+  width: 100%;
+  min-height: 65px;
+}
+.image-review p {
+  margin: 4px 0;
+}
+.image-review button {
+  padding: 5px;
+  text-decoration: underline;
+}

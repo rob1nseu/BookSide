@@ -59,6 +59,11 @@ export type Chapter = {
   attempts: Attempt[];
   hint_used: number;
   revealed: number;
+  parent_id: string | null;
+  is_group: number;
+  level: number;
+  preparation: string;
+  preparation_error: string | null;
 };
 export type Space = {
   id: string;
@@ -71,6 +76,7 @@ export type Space = {
   chapters: Chapter[];
   documents: Document[];
   active_run: string | null;
+  legacy_outline: boolean;
 };
 export type Message = {
   id: string;

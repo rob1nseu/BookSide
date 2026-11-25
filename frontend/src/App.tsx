@@ -11,6 +11,7 @@ import { api, send } from "./api";
 import { Brand, Dialog } from "./components";
 import Library from "./Library";
 import Workspace from "./Workspace";
+import ChapterTree from "./ChapterTree";
 import type { Settings as SettingsType, Space } from "./types";
 const Settings = lazy(() => import("./Settings"));
 const Partner = lazy(() => import("./Partner"));
@@ -50,6 +51,9 @@ export default function App() {
   }, [id, refresh]);
   useEffect(() => {
     if (
+      !space?.chapters.some((c) =>
+        ["queued", "running"].includes(c.preparation),
+      ) &&
       !space?.documents.some((d) =>
         ["uploaded", "parsing", "indexing"].includes(d.status),
       )
@@ -102,32 +106,40 @@ export default function App() {
                 </span>
               </div>
               <div className="chapters">
-                {(space?.mode === "review"
-                  ? space.review_queue.map((q) =>
-                      space.chapters.find((c) => c.id === q)!,
-                    )
-                  : space?.chapters || []
-                )
-                  .filter(Boolean)
-                  .map((chapter, index) => (
-                    <button
-                      key={chapter.id}
-                      className={
-                        chapter.id === space?.current_chapter
-                          ? "chapter selected"
-                          : "chapter"
-                      }
-                      onClick={() => void choose(chapter.id)}
-                    >
-                      <span className="chapter-number">
-                        {String(index + 1).padStart(2, "0")}
-                      </span>
-                      <span>
-                        {chapter.title}
-                        <small>{chapter.state}</small>
-                      </span>
-                    </button>
-                  ))}
+                {space?.mode !== "review" && space ? (
+                  <ChapterTree
+                    chapters={space.chapters}
+                    current={space.current_chapter}
+                    choose={(id) => void choose(id)}
+                  />
+                ) : (
+                  (space?.mode === "review"
+                    ? space.review_queue.map((q) =>
+                        space.chapters.find((c) => c.id === q)!,
+                      )
+                    : space?.chapters || []
+                  )
+                    .filter(Boolean)
+                    .map((chapter, index) => (
+                      <button
+                        key={chapter.id}
+                        className={
+                          chapter.id === space?.current_chapter
+                            ? "chapter selected"
+                            : "chapter"
+                        }
+                        onClick={() => void choose(chapter.id)}
+                      >
+                        <span className="chapter-number">
+                          {String(index + 1).padStart(2, "0")}
+                        </span>
+                        <span>
+                          {chapter.title}
+                          <small>{chapter.state}</small>
+                        </span>
+                      </button>
+                    ))
+                )}
               </div>
             </>
           ) : (
@@ -182,6 +194,7 @@ export default function App() {
             onRefresh={refresh}
             onError={setError}
             configured={!!(settings?.configured || settings?.demo)}
+            onOpen={setId}
           />
         ) : (
           <div className="loading">正在恢复学习位置…</div>

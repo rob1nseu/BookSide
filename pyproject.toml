@@ -3,7 +3,7 @@ name = "learnest"
 version = "0.1.0"
 description = "A quiet, document-grounded learning workspace"
 requires-python = ">=3.11"
-dependencies = ["fastapi>=0.115,<1", "uvicorn>=0.34,<1", "httpx>=0.28,<1", "pydantic>=2.10,<3", "python-multipart>=0.0.20,<1", "pymupdf>=1.25,<2", "python-pptx>=1.0,<2", "python-dotenv>=1.0,<2"]
+dependencies = ["fastapi>=0.115,<1", "uvicorn>=0.34,<1", "httpx>=0.28,<1", "pydantic>=2.10,<3", "python-multipart>=0.0.20,<1", "pymupdf>=1.25,<2", "python-pptx>=1.0,<2", "python-dotenv>=1.0,<2", "pillow>=11,<14"]
 
 [dependency-groups]
 dev = ["pytest>=8,<10", "pytest-asyncio>=0.25,<2", "ruff>=0.11,<1", "psutil>=6,<8"]

@@ -13,18 +13,24 @@ import { api, send } from "./api";
 import { Prose, statusLabel, verdictLabel } from "./components";
 import type { Space, Page, Message, Run } from "./types";
 const PdfReader = lazy(() => import("./PdfReader"));
+const AnswerImage = lazy(() => import("./AnswerImage"));
 export default function Workspace({
   space,
   onRefresh,
   onError,
   configured,
+  onOpen,
 }: {
   space: Space;
   onRefresh: () => Promise<void>;
   onError: (s: string) => void;
   configured: boolean;
+  onOpen: (id: string) => void;
 }) {
   const chapter = space.chapters.find((c) => c.id === space.current_chapter);
+  const question = chapter?.question;
+  const draftKey = "draft:" + chapter?.id + ":" + (question?.id || "ask");
+  const [selectedOption, setSelectedOption] = useState("");
   const [pages, setPages] = useState<Page[]>([]);
   const [reader, setReader] = useState(false);
   const [target, setTarget] = useState({ doc: "", page: 1 });
@@ -41,6 +47,7 @@ export default function Workspace({
     action: string;
     text: string;
     chapterId: string;
+    draftKey: string;
   } | null>(null);
   const source = useRef<EventSource | null>(null);
   const [lastAction, setLastAction] = useState<{
@@ -59,7 +66,8 @@ export default function Workspace({
   useEffect(() => {
     if (chapter) {
       setTarget({ doc: chapter.document_id, page: chapter.start_page });
-      setDraft(localStorage.getItem("draft:" + chapter.id) || "");
+      setDraft(localStorage.getItem(draftKey) || "");
+      setSelectedOption(localStorage.getItem("option:" + question?.id) || "");
       setPractice(
         space.mode === "review" ||
           chapter.attempts.some(
@@ -70,7 +78,7 @@ export default function Workspace({
       setReply(null);
       setAskMode(false);
     }
-  }, [chapter?.id, space.mode]);
+  }, [chapter?.id, question?.id, space.mode]);
   useEffect(() => () => source.current?.close(), []);
   function watch(id: string) {
     if (active === id) return;
@@ -89,8 +97,8 @@ export default function Workspace({
           const sent = pending.current;
           if (sent && (sent.action === "answer" || sent.action === "ask")) {
             setDraft((old) => (old === sent.text ? "" : old));
-            if (localStorage.getItem("draft:" + sent.chapterId) === sent.text)
-              localStorage.removeItem("draft:" + sent.chapterId);
+            if (localStorage.getItem(sent.draftKey) === sent.text)
+              localStorage.removeItem(sent.draftKey);
           }
           setReply(state.result);
           void onRefresh();
@@ -117,7 +125,7 @@ export default function Workspace({
     if (!chapter) return;
     setLastAction({ action, text });
     setFailed(false);
-    pending.current = { action, text, chapterId: chapter.id };
+    pending.current = { action, text, chapterId: chapter.id, draftKey };
     setMore(false);
     try {
       const result = await send<{ id: string }>(`/spaces/${space.id}/actions`, {
@@ -125,6 +133,11 @@ export default function Workspace({
         text,
         chapter_id: chapter.id,
         request_key: crypto.randomUUID(),
+        selected_option:
+          action === "answer" && question?.kind === "choice"
+            ? selectedOption || null
+            : null,
+        prepare_chapter: action === "teach",
       });
       watch(result.id);
     } catch (e) {
@@ -155,7 +168,6 @@ export default function Workspace({
     </div>
   );
   const currentDoc = space.documents.find((d) => d.id === target.doc);
-  const question = chapter?.question;
   const attempts =
     chapter?.attempts.filter((a) => a.question_id === question?.id) || [];
   const lastAttempt = attempts.at(-1);
@@ -175,7 +187,7 @@ export default function Workspace({
     const ids =
       space.mode === "review"
         ? space.review_queue
-        : space.chapters.map((c) => c.id);
+        : space.chapters.filter((c) => !c.is_group).map((c) => c.id);
     const next = ids[ids.indexOf(chapter!.id) + 1];
     if (next) {
       await send(`/spaces/${space.id}`, { chapter_id: next }, "PATCH");
@@ -200,6 +212,40 @@ export default function Workspace({
             </button>
           </div>
         </header>
+        {space.legacy_outline && (
+          <div className="notice">
+            旧目录可能包含重复章节。原学习记录将保留。
+            <button
+              disabled={!!active}
+              onClick={() =>
+                void send<{ id: string }>(
+                  `/spaces/${space.id}/rebuild-outline`,
+                  {},
+                )
+                  .then((s) => onOpen(s.id))
+                  .catch((e) => onError(e.message))
+              }
+            >
+              用新目录创建学习空间
+            </button>
+          </div>
+        )}
+        {space.chapters.some((c) =>
+          ["queued", "running"].includes(c.preparation),
+        ) && (
+          <div className="preparation-status" role="status">
+            同章其他小节正在后台准备，可随时选择小节优先学习。
+            <button
+              onClick={() =>
+                void send(`/spaces/${space.id}/preparation/stop`, {})
+                  .then(onRefresh)
+                  .catch((e) => onError(e.message))
+              }
+            >
+              暂停后台准备
+            </button>
+          </div>
+        )}
         {!chapter ? (
           <section className="empty">
             <BookOpen size={48} />
@@ -227,7 +273,7 @@ export default function Workspace({
             <div className="task-scroll">
               <div className="task-heading">
                 <div>
-                  <h1>{chapter.lesson?.title || chapter.title}</h1>
+                  <h1>{chapter.title}</h1>
                   <p>{chapter.lesson?.objective || "一次只学懂一个小问题。"}</p>
                 </div>
                 <button
@@ -261,10 +307,13 @@ export default function Workspace({
                   <span className="drawn-sprout">✳</span>
                   <h2>从这一章开始</h2>
                   <p>
-                    结合你的资料，Tutor 会先给一个小目标，
+                    全部资料已可检索；先准备当前小节，
                     <br />
-                    再用几个核心问题帮你确认理解。
+                    同一大章的其他小节会在后台依次准备。
                   </p>
+                  {chapter.preparation_error && (
+                    <p role="alert">{chapter.preparation_error}</p>
+                  )}
                   <button
                     className="primary"
                     disabled={!!active || !configured}
@@ -324,9 +373,13 @@ export default function Workspace({
                                   <input
                                     type="radio"
                                     name="answer"
-                                    checked={draft === option}
+                                    checked={selectedOption === option}
                                     onChange={() => {
-                                      setDraft(option);
+                                      setSelectedOption(option);
+                                      localStorage.setItem(
+                                        "option:" + question.id,
+                                        option,
+                                      );
                                       setAskMode(false);
                                     }}
                                   />
@@ -556,6 +609,20 @@ export default function Workspace({
                 );
               }}
             >
+              {practice && question && !askMode && (
+                <Suspense fallback={null}>
+                  <AnswerImage
+                    key={question.id}
+                    spaceId={space.id}
+                    disabled={!!active}
+                    onConfirm={(text) => {
+                      const value = draft ? draft + "\n" + text : text;
+                      setDraft(value);
+                      localStorage.setItem(draftKey, value);
+                    }}
+                  />
+                </Suspense>
+              )}
               <div className="composer-mode">
                 <span>
                   {practice && question && !askMode
@@ -578,18 +645,24 @@ export default function Workspace({
                   aria-label="主输入框"
                   placeholder={
                     practice && !askMode
-                      ? "说说你的理解…"
+                      ? question?.kind === "choice"
+                        ? "为什么选择这个选项？写下你的推理（可选）…"
+                        : "说说你的理解，或上传手写答案…"
                       : "提问，或者说说你想先学什么…"
                   }
                   value={draft}
                   onChange={(e) => {
                     setDraft(e.target.value);
-                    localStorage.setItem("draft:" + chapter.id, e.target.value);
+                    localStorage.setItem(draftKey, e.target.value);
                   }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                       e.preventDefault();
-                      if (draft.trim() && !active)
+                      if (
+                        (draft.trim() ||
+                          (practice && !askMode && selectedOption)) &&
+                        !active
+                      )
                         void act(
                           practice && question && !askMode ? "answer" : "ask",
                           draft,
@@ -602,7 +675,13 @@ export default function Workspace({
                   aria-label={
                     practice && question && !askMode ? "提交回答" : "发送提问"
                   }
-                  disabled={!!active || !draft.trim() || !configured}
+                  disabled={
+                    !!active ||
+                    !(practice && !askMode && question?.kind === "choice"
+                      ? selectedOption
+                      : draft.trim()) ||
+                    !configured
+                  }
                 >
                   <Send size={21} />
                 </button>

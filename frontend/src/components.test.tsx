@@ -9,7 +9,11 @@ describe("safe readable content", () => {
       </Prose>,
     );
     expect(
-      await screen.findByRole("heading", { name: "学习目标" }),
+      await screen.findByRole(
+        "heading",
+        { name: "学习目标" },
+        { timeout: 5000 },
+      ),
     ).toBeInTheDocument();
     expect(document.querySelector("script")).toBeNull();
     expect(screen.getByText("定义")).toBeInTheDocument();

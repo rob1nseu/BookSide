@@ -4,6 +4,7 @@ import json
 import os
 import sqlite3
 import re
+import base64
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -21,6 +22,7 @@ from .documents import build_chapters, ingest, validate_file
 from .model import Provider
 from .schemas import Action
 from .tutoring import get_question, public_question, recompute, run_action
+from .preparation import queue_chapter, prepare_space
 
 load_dotenv()
 ROOT = Path(__file__).resolve().parents[2]
@@ -65,6 +67,9 @@ def create_app(data_dir=None, provider=None):
             "UPDATE documents SET status='failed',error='解析任务被中断，请重试' WHERE status IN ('uploaded','parsing','indexing')"
         )
         store.write("UPDATE jobs SET status='interrupted',error='服务重启，请重试' WHERE status='running'")
+        store.write(
+            "UPDATE chapters SET preparation='failed',preparation_error='服务重启，请点击本节继续准备' WHERE preparation IN ('queued','running')"
+        )
         yield
         for task in list(tasks.values()):
             task.cancel()
@@ -275,6 +280,7 @@ def create_app(data_dir=None, provider=None):
             "active_run": active["id"] if active else None,
             "review_queue": json.loads(space["review_queue"]),
             "review_due": [c["id"] for c in chapters if c["state"] == "待复查"][:3],
+            "legacy_outline": any(c["outline_version"] < 2 for c in chapters),
         }
 
     @app.patch("/api/spaces/{space_id}")
@@ -289,13 +295,18 @@ def create_app(data_dir=None, provider=None):
                 db.execute("UPDATE spaces SET archived=? WHERE id=?", (int(value.archived), space_id))
             if value.chapter_id:
                 if not db.execute(
-                    "SELECT 1 FROM chapters WHERE id=? AND space_id=?", (value.chapter_id, space_id)
+                    "SELECT 1 FROM chapters WHERE id=? AND space_id=? AND is_group=0",
+                    (value.chapter_id, space_id),
                 ).fetchone():
                     raise HTTPException(404, "章节不属于当前空间")
                 db.execute("UPDATE spaces SET current_chapter=? WHERE id=?", (value.chapter_id, space_id))
+                db.execute(
+                    "UPDATE chapters SET state='已学习，待验证' WHERE id=? AND lesson IS NOT NULL AND state='未学习'",
+                    (value.chapter_id,),
+                )
             if value.mode == "review" and space["mode"] != "review":
                 rows = db.execute(
-                    "SELECT id FROM chapters WHERE space_id=? ORDER BY CASE state WHEN '需要巩固' THEN 0 WHEN '未学习' THEN 1 WHEN '已学习，待验证' THEN 2 ELSE 3 END,position",
+                    "SELECT id FROM chapters WHERE space_id=? AND is_group=0 ORDER BY CASE state WHEN '需要巩固' THEN 0 WHEN '未学习' THEN 1 WHEN '已学习，待验证' THEN 2 ELSE 3 END,position",
                     (space_id,),
                 ).fetchall()
                 queue = [
@@ -317,6 +328,8 @@ def create_app(data_dir=None, provider=None):
     @app.delete("/api/spaces/{space_id}")
     def delete_space(space_id: str):
         space_exists(space_id)
+        if "prepare:" + space_id in tasks:
+            tasks["prepare:" + space_id].cancel()
         for row in store.all("SELECT id FROM runs WHERE space_id=? AND status='running'", (space_id,)):
             if row["id"] in tasks:
                 tasks[row["id"]].cancel()
@@ -352,10 +365,96 @@ def create_app(data_dir=None, provider=None):
             space = edit_space(space_id, SpaceEdit(mode="review"))
             value.chapter_id = space["current_chapter"]
         chapter_id = value.chapter_id or space["current_chapter"]
-        if not store.one("SELECT 1 FROM chapters WHERE id=? AND space_id=?", (chapter_id, space_id)):
+        chapter = store.one(
+            "SELECT * FROM chapters WHERE id=? AND space_id=? AND is_group=0", (chapter_id, space_id)
+        )
+        if not chapter:
             raise HTTPException(404, "章节不属于当前学习空间")
         value.chapter_id = chapter_id
-        return begin_run(space_id, space_id, chapter_id, value)
+        existing = store.one(
+            "SELECT id FROM runs WHERE scope=? AND request_key=?", (space_id, value.request_key)
+        )
+        if existing:
+            return existing
+        background = tasks.get("prepare:" + space_id)
+        if background:
+            background.cancel()
+            await asyncio.gather(background, return_exceptions=True)
+        result = begin_run(space_id, space_id, chapter_id, value)
+        if value.prepare_chapter and value.action == "teach":
+            queue_chapter(store, chapter)
+        launch("prepare:" + space_id, prepare_space(app, space_id))
+        return result
+
+    @app.post("/api/spaces/{space_id}/preparation/stop")
+    async def stop_preparation(space_id: str):
+        space_exists(space_id)
+        task = tasks.get("prepare:" + space_id)
+        if task:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        store.write(
+            "UPDATE chapters SET preparation='idle' WHERE space_id=? AND preparation IN ('queued','running')",
+            (space_id,),
+        )
+        return {"ok": True}
+
+    @app.post("/api/spaces/{space_id}/rebuild-outline", status_code=201)
+    def rebuild_outline(space_id: str):
+        old = space_exists(space_id)
+        ids = [
+            d["document_id"]
+            for d in store.all("SELECT document_id FROM space_documents WHERE space_id=?", (space_id,))
+        ]
+        # New space preserves every previous answer/lesson and avoids attaching them to wrong sections.
+        return create_space(SpaceInput(name=old["name"] + " · 新目录", document_ids=ids))
+
+    @app.post("/api/spaces/{space_id}/answer-image")
+    async def answer_image(space_id: str, file: UploadFile = File(...)):
+        from .model import ModelError
+        from PIL import Image
+        from io import BytesIO
+        import warnings
+
+        space_exists(space_id)
+        content = await file.read(5 * 1024 * 1024 + 1)
+        await file.close()
+        if len(content) > 5 * 1024 * 1024:
+            raise HTTPException(413, "图片不能超过 5 MiB")
+        mime = (
+            "image/png"
+            if content.startswith(b"\x89PNG\r\n\x1a\n")
+            else "image/jpeg"
+            if content.startswith(b"\xff\xd8\xff")
+            else None
+        )
+        if not mime:
+            raise HTTPException(400, "请选择 PNG 或 JPEG 图片")
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", Image.DecompressionBombWarning)
+                with Image.open(BytesIO(content)) as image:
+                    if image.width * image.height > 20_000_000 or max(image.size) > 8192:
+                        raise ValueError()
+                    image.verify()
+        except Exception as exc:
+            raise HTTPException(400, "图片损坏或尺寸过大，请缩小后重试") from exc
+
+        async def noop(_):
+            pass
+
+        try:
+            result, _ = await model.generate(
+                "transcribe",
+                {
+                    "request": "抄录这张学生作答图片，不解题。",
+                    "_image": "data:" + mime + ";base64," + base64.b64encode(content).decode(),
+                },
+                noop,
+            )
+            return result  # Neither the image nor unconfirmed OCR is persisted.
+        except ModelError as exc:
+            raise HTTPException(502, str(exc)) from exc
 
     def begin_run(scope, space_id, chapter_id, value):
         existing = store.one(

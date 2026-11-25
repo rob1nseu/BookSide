@@ -35,6 +35,25 @@ def generate(root):
     blank.new_page()
     blank.save(root / "blank.pdf")
     (root / "broken.pdf").write_bytes(b"%PDF-corrupted")
+    hierarchy = pymupdf.open()
+    titles = ["1.1 Sets", "1.2 Functions", "1.3 Inverse", "1.4 Elementary"]
+    for i, title in enumerate(titles):
+        page = hierarchy.new_page()
+        if i == 0:
+            page.insert_text((55, 45), "Chapter 1 Functions", fontsize=20)
+        page.insert_text((55, 100), title, fontsize=18)
+        page.insert_text(
+            (55, 150),
+            "A function maps each input to exactly one output.\nA one-to-one function has an inverse.",
+            fontsize=13,
+        )
+    hierarchy.set_toc([[1, "Chapter 1 Functions", 1]] + [[2, title, i + 1] for i, title in enumerate(titles)])
+    hierarchy.save(root / "hierarchy.pdf")
+    answer = pymupdf.open()
+    page = answer.new_page(width=400, height=200)
+    page.insert_text((40, 70), "2x + 3 = 7", fontsize=24)
+    page.insert_text((40, 120), "x = 2", fontsize=24)
+    page.get_pixmap().save(root / "answer.png")
 
 
 if __name__ == "__main__":

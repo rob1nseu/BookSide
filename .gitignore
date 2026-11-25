@@ -4,6 +4,11 @@ dist/
 data/
 .env
 .env.local
+.env.*
+**/model.local.json
+**/model.local.tmp
+*.pem
+*.key
 __pycache__/
 .pytest_cache/
 *.pyc
@@ -15,3 +20,9 @@ frontend/public/pdf/
 *.tsbuildinfo
 .ruff_cache/
 .env.example
+# 审阅反馈文件
+docs/**/*.docx
+# 测试
+tests/
+!backend/tests/
+!backend/tests/*.py

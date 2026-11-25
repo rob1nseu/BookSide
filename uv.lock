@@ -140,6 +140,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
+    { name = "pillow" },
     { name = "pydantic" },
     { name = "pymupdf" },
     { name = "python-dotenv" },
@@ -164,6 +165,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115,<1" },
     { name = "httpx", specifier = ">=0.28,<1" },
+    { name = "pillow", specifier = ">=11,<14" },
     { name = "pydantic", specifier = ">=2.10,<3" },
     { name = "pymupdf", specifier = ">=1.25,<2" },
     { name = "python-dotenv", specifier = ">=1.0,<2" },

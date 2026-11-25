@@ -94,3 +94,93 @@ test("mobile navigation and controls stay inside viewport", async ({
     fullPage: true,
   });
 });
+
+test("hierarchy -> chapter preparation -> image confirmation -> choice reasoning", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  page.on("console", (e) => {
+    if (e.type() === "error") errors.push(e.text());
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "新建学习", exact: true }).click();
+  await page
+    .getByLabel("上传学习资料")
+    .setInputFiles(path.join(fixtures, "hierarchy.pdf"));
+  await page.getByRole("button", { name: "创建学习空间" }).click();
+  await expect(page.locator(".chapter-group > summary")).toHaveText(
+    "Chapter 1 Functions",
+  );
+  await expect(page.locator(".chapters .chapter")).toHaveCount(4);
+  await page.locator(".chapter-group > summary").click();
+  await expect(page.getByRole("button", { name: /1.1 Sets/ })).toBeHidden();
+  await page.locator(".chapter-group > summary").click();
+  await page.getByRole("button", { name: /1.3 Inverse/ }).click();
+  await expect(page.getByRole("heading", { name: "1.3 Inverse", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "开始学习", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "先理解，再往前走" }),
+  ).toBeVisible();
+  await expect(page.getByText(/已接收.*字符/)).toHaveCount(0);
+  await page.getByRole("button", { name: "来试一道题" }).click();
+  await page
+    .getByLabel("上传答案图片", { exact: true })
+    .setInputFiles(path.join(fixtures, "answer.png"));
+  await expect(page.getByLabel("核对识别结果")).toHaveValue(/x = 2/);
+  await expect(page.locator(".feedback")).toHaveCount(0);
+  await page
+    .getByLabel("核对识别结果")
+    .fill("My handwritten calculation gives x = 2.");
+  await page.getByRole("button", { name: "确认并填入作答" }).click();
+  await expect(page.getByLabel("主输入框")).toHaveValue(
+    "My handwritten calculation gives x = 2.",
+  );
+  await page.getByRole("button", { name: "提交回答", exact: true }).click();
+  await expect(page.locator(".feedback")).toBeVisible();
+  await page.getByRole("button", { name: "继续下一题" }).click();
+  await page.getByRole("radio", { name: "只背一个词" }).check();
+  await expect(page.getByLabel("主输入框")).toHaveValue("");
+  await page
+    .getByLabel("主输入框")
+    .fill("我觉得背下名词就足以掌握概念，不用考虑适用条件。");
+  await page.reload();
+  await expect(page.getByRole("radio", { name: "只背一个词" })).toBeChecked();
+  await expect(page.getByLabel("主输入框")).toHaveValue(
+    "我觉得背下名词就足以掌握概念，不用考虑适用条件。",
+  );
+  await page.getByRole("button", { name: "提交回答", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "一起检查一下" }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: path.join(os.tmpdir(), "learnest-feedback-fixed.png"),
+  });
+  await page.getByRole("button", { name: "展开学习记录" }).click();
+  await expect(
+    page.locator(".history-list").getByText(/我觉得背下名词/),
+  ).toBeVisible();
+  await page.getByRole("button", { name: /1.1 Sets/ }).click();
+  await expect(
+    page.getByRole("heading", { name: "先理解，再往前走" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "阅读资料" }).click();
+  await expect(page.getByLabel("PDF 第 1 页")).toBeVisible();
+  await page.getByRole("button", { name: "关闭阅读器" }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "来试一道题" }).click();
+  await page
+    .getByLabel("上传答案图片", { exact: true })
+    .setInputFiles(path.join(fixtures, "answer.png"));
+  await expect(page.getByLabel("核对识别结果")).toBeVisible();
+  await expect(page.getByLabel("主输入框")).toBeInViewport();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBeTruthy();
+  await page.screenshot({
+    path: path.join(os.tmpdir(), "learnest-feedback-mobile.png"),
+  });
+  expect(errors).toEqual([]);
+});

@@ -1,13 +1,15 @@
 """Immutable PDF/PPTX ingestion. Parser failures never masquerade as indexed content."""
 
 import re
+import json
 import zipfile
 from pathlib import Path
 
 import pymupdf
 from pptx import Presentation
 
-from .db import uid
+from .db import uid, dumps
+from .outline import make_outline, section_pages, heading
 
 
 def validate_file(content: bytes, kind: str):
@@ -25,7 +27,8 @@ def parse_file(path: Path, kind: str):
                 raise ValueError("暂不支持加密 PDF，请先解密")
             if len(doc) > 1000:
                 raise ValueError("文件超过 1000 页上限")
-            toc = {entry[2]: entry[1] for entry in doc.get_toc() if entry[0] == 1}
+            bookmarks = doc.get_toc()
+            toc = {entry[2]: entry[1] for entry in bookmarks if entry[0] == 1}
             for index, page in enumerate(doc):
                 text = page.get_text(sort=True).strip()
                 lines = [line.strip() for line in text.splitlines() if line.strip()]
@@ -42,6 +45,13 @@ def parse_file(path: Path, kind: str):
                         chapter=index + 1 in toc,
                     )
                 )
+                result[-1]["headings"] = [
+                    {"title": title, "size": max(s["size"] for s in line["spans"])}
+                    for block in page.get_text("dict")["blocks"]
+                    if "lines" in block
+                    for line in block["lines"]
+                    if (title := "".join(s["text"] for s in line["spans"]).strip()) and heading(title)
+                ]
     else:
         with zipfile.ZipFile(path) as archive:
             if sum(info.file_size for info in archive.infolist()) > 250 * 1024 * 1024:
@@ -69,11 +79,18 @@ def parse_file(path: Path, kind: str):
                 warning = "未提取到正文；该页不能作为可靠教学依据"
             result.append(
                 dict(
-                    number=index + 1, title=title[:100], text=text, notes=notes, warning=warning, chapter=True
+                    number=index + 1,
+                    title=title[:100],
+                    text=text,
+                    notes=notes,
+                    warning=warning,
+                    chapter=True,
+                    slide=True,
                 )
             )
     if not result:
         raise ValueError("文件没有页面")
+    result[0]["outline"] = make_outline(result, bookmarks if kind == "pdf" else ())
     return result
 
 
@@ -101,7 +118,10 @@ def ingest(store, document_id):
             status = "partial" if any(p["warning"] for p in pages) else "ready"
             if not any(len(p["text"]) >= 15 for p in pages):
                 raise ValueError("没有可用于教学的文本；请上传文本型 PDF 或 PPTX")
-            db.execute("UPDATE documents SET status=? WHERE id=?", (status, document_id))
+            db.execute(
+                "UPDATE documents SET status=?,outline=? WHERE id=?",
+                (status, dumps(pages[0]["outline"]), document_id),
+            )
             db.execute(
                 "UPDATE jobs SET status='done' WHERE document_id=? AND status='running'", (document_id,)
             )
@@ -120,30 +140,46 @@ def build_chapters(store, space_id, document_id, parsed=None):
     pages = parsed or store.all("SELECT * FROM pages WHERE document_id=? ORDER BY number", (document_id,))
     if not pages:
         return
-    anchors = [
-        p
-        for p in pages
-        if p.get("chapter") or re.match(r"^(第.{1,8}[章节]|Chapter\s+\d|\d+[.、]\s*\S)", p["title"], re.I)
-    ]
-    if not anchors:
-        anchors = pages[::8]
+    doc = store.one("SELECT * FROM documents WHERE id=?", (document_id,))
+    if not doc.get("outline"):
+        parsed_pages = parsed or parse_file(
+            store.root / "files" / f"{document_id}.{doc['kind']}", doc["kind"]
+        )
+        outline = parsed_pages[0]["outline"]
+        store.write("UPDATE documents SET outline=? WHERE id=?", (dumps(outline), document_id))
+    else:
+        outline = json.loads(doc["outline"])
     with store.connect() as db:
         if db.execute(
             "SELECT 1 FROM chapters WHERE space_id=? AND document_id=?", (space_id, document_id)
         ).fetchone():
             return
         offset = db.execute("SELECT COUNT(*) FROM chapters WHERE space_id=?", (space_id,)).fetchone()[0]
-        for index, page in enumerate(anchors):
-            chapter_id = uid()
-            end = anchors[index + 1]["number"] - 1 if index + 1 < len(anchors) else pages[-1]["number"]
+        ids = [uid() for _ in outline]
+        for index, item in enumerate(outline):
+            chapter_id = ids[index]
             db.execute(
-                "INSERT INTO chapters(id,space_id,document_id,title,start_page,end_page,position) VALUES(?,?,?,?,?,?,?)",
-                (chapter_id, space_id, document_id, page["title"], page["number"], end, offset + index),
+                "INSERT INTO chapters(id,space_id,document_id,title,start_page,end_page,position,parent_id,level,is_group,start_offset,end_offset,outline_version) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,2)",
+                (
+                    chapter_id,
+                    space_id,
+                    document_id,
+                    item["title"],
+                    item["page"],
+                    item["end_page"],
+                    offset + index,
+                    ids[item["parent"]] if item["parent"] is not None else None,
+                    item["level"],
+                    item["is_group"],
+                    item["offset"],
+                    item["end_offset"],
+                ),
             )
-            db.execute(
-                "UPDATE spaces SET current_chapter=COALESCE(current_chapter,?) WHERE id=?",
-                (chapter_id, space_id),
-            )
+            if not item["is_group"]:
+                db.execute(
+                    "UPDATE spaces SET current_chapter=COALESCE(current_chapter,?) WHERE id=?",
+                    (chapter_id, space_id),
+                )
 
 
 def retrieve(store, space_id, query, chapter=None, limit=6):
@@ -151,6 +187,8 @@ def retrieve(store, space_id, query, chapter=None, limit=6):
         "SELECT p.*,d.name,d.kind FROM pages p JOIN space_documents s ON s.document_id=p.document_id JOIN documents d ON d.id=p.document_id WHERE s.space_id=?",
         (space_id,),
     )
+    if chapter:
+        pages = section_pages(pages, chapter)
     terms = re.findall(r"[a-zA-Z0-9_]{2,}|[\u4e00-\u9fff]{2,}", query.lower())
     terms += [
         term[i : i + 2]
