@@ -1,0 +1,16 @@
+.venv/
+node_modules/
+dist/
+data/
+.env
+.env.local
+__pycache__/
+.pytest_cache/
+*.pyc
+test-results/
+playwright-report/
+.coverage
+*.egg-info/
+frontend/public/pdf/
+*.tsbuildinfo
+.ruff_cache/

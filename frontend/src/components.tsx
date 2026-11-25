@@ -1,0 +1,77 @@
+import { lazy, Suspense, useEffect, useRef, type ReactNode } from "react";
+import { X, Sprout } from "lucide-react";
+const MarkdownView = lazy(() => import("./MarkdownView"));
+
+export function Brand() {
+  return (
+    <div className="brand">
+      <Sprout size={38} strokeWidth={1.6} />
+      <div>
+        <strong>LearNest</strong>
+        <span>极简学习</span>
+      </div>
+    </div>
+  );
+}
+export function Prose({ children }: { children: string }) {
+  return (
+    <Suspense fallback={<p className="prose">{children}</p>}>
+      <MarkdownView>{children}</MarkdownView>
+    </Suspense>
+  );
+}
+export function Dialog({
+  title,
+  close,
+  children,
+  wide = false,
+}: {
+  title: string;
+  close: () => void;
+  children: ReactNode;
+  wide?: boolean;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const d = ref.current!;
+    d.showModal();
+    const cancel = (e: Event) => {
+      e.preventDefault();
+      close();
+    };
+    d.addEventListener("cancel", cancel);
+    return () => {
+      d.removeEventListener("cancel", cancel);
+      d.close();
+    };
+  }, [close]);
+  return (
+    <dialog
+      ref={ref}
+      className={wide ? "modal wide" : "modal"}
+      aria-label={title}
+    >
+      <header>
+        <h2>{title}</h2>
+        <button className="icon" onClick={close} aria-label="关闭">
+          <X />
+        </button>
+      </header>
+      {children}
+    </dialog>
+  );
+}
+export const statusLabel: Record<string, string> = {
+  uploaded: "已上传",
+  parsing: "解析中",
+  indexing: "建立索引",
+  ready: "可用",
+  partial: "部分可用",
+  failed: "解析失败",
+};
+export const verdictLabel: Record<string, string> = {
+  correct: "理解得不错",
+  partial: "再补充一点",
+  incorrect: "一起检查一下",
+  uncertain: "暂无法判断",
+};

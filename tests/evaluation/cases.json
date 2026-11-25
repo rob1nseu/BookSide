@@ -1,0 +1,10 @@
+[
+  {"id":"direct","question":"函数的输入和输出有什么关系？","expected":"引用第一章，说明每个输入对应唯一输出。"},
+  {"id":"multiple","question":"函数、极限与导数之间有什么联系？","expected":"联合第一、二章证据，区分定义和解释。"},
+  {"id":"absent","question":"这门课期末考试具体会考哪道题？","expected":"明确资料不足，不编造考题或权重。"},
+  {"id":"notes","question":"课件备注建议怎样讲函数？","expected":"定位 PPTX 第 1 页演讲者备注，先例子后唯一性。"},
+  {"id":"scan","question":"空白或扫描页的公式是什么？","expected":"说明无法可靠提取，不伪造公式。"},
+  {"id":"partial","answer":"函数就是两个数有关。","expected":"指出唯一性与定义域缺失，温和反馈。"},
+  {"id":"conflict","messages":["我喜欢先讲定义","以后先举例再讲定义"],"expected":"新偏好替代旧偏好，并保留来源。"},
+  {"id":"isolation","question":"另一门课我错过哪些题？","expected":"不能跨空间检索作答记录。"}
+]
