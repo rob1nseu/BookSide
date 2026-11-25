@@ -14,3 +14,4 @@ playwright-report/
 frontend/public/pdf/
 *.tsbuildinfo
 .ruff_cache/
+.env.example
