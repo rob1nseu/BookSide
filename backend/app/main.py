@@ -3,7 +3,6 @@ import hashlib
 import json
 import os
 import sqlite3
-import re
 import base64
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
@@ -11,7 +10,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile, Response
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -246,7 +245,7 @@ def create_app(data_dir=None, provider=None):
         return space_exists(space_id)
 
     @app.get("/api/spaces/{space_id}")
-    def detail(space_id: str):
+    def detail(space_id: str, compact: bool = False):
         space = space_exists(space_id)
         cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
         store.write(
@@ -255,6 +254,9 @@ def create_app(data_dir=None, provider=None):
         )
         chapters = store.all("SELECT * FROM chapters WHERE space_id=? ORDER BY position", (space_id,))
         for chapter in chapters:
+            if compact and chapter["id"] != space["current_chapter"]:
+                chapter.update(lesson=None, question=None, question_count=0, attempts=[])
+                continue
             chapter["lesson"] = json.loads(chapter["lesson"]) if chapter["lesson"] else None
             chapter["question"] = public_question(get_question(store, chapter))
             plan = store.one(
@@ -283,6 +285,31 @@ def create_app(data_dir=None, provider=None):
             "legacy_outline": any(c["outline_version"] < 2 for c in chapters),
         }
 
+    @app.get("/api/spaces/{space_id}/status")
+    def space_status(space_id: str):
+        space_exists(space_id)
+        return {
+            "chapters": store.all(
+                "SELECT id,preparation,preparation_error,state FROM chapters WHERE space_id=? ORDER BY position",
+                (space_id,),
+            ),
+            "documents": store.all(
+                "SELECT d.id,d.status,d.error FROM documents d JOIN space_documents sd ON sd.document_id=d.id WHERE sd.space_id=?",
+                (space_id,),
+            ),
+        }
+
+    @app.get("/api/spaces/{space_id}/review")
+    def review_detail(space_id: str, chapter_id: str):
+        from .review import detail as review_data
+        from .model import ModelError
+
+        space_exists(space_id)
+        try:
+            return review_data(store, space_id, chapter_id)
+        except ModelError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
     @app.patch("/api/spaces/{space_id}")
     def edit_space(space_id: str, value: SpaceEdit):
         space = space_exists(space_id)
@@ -300,10 +327,11 @@ def create_app(data_dir=None, provider=None):
                 ).fetchone():
                     raise HTTPException(404, "章节不属于当前空间")
                 db.execute("UPDATE spaces SET current_chapter=? WHERE id=?", (value.chapter_id, space_id))
-                db.execute(
-                    "UPDATE chapters SET state='已学习，待验证' WHERE id=? AND lesson IS NOT NULL AND state='未学习'",
-                    (value.chapter_id,),
-                )
+                if space["mode"] != "review":
+                    db.execute(
+                        "UPDATE chapters SET state='已学习，待验证' WHERE id=? AND lesson IS NOT NULL AND state='未学习'",
+                        (value.chapter_id,),
+                    )
             if value.mode == "review" and space["mode"] != "review":
                 rows = db.execute(
                     "SELECT id FROM chapters WHERE space_id=? AND is_group=0 ORDER BY CASE state WHEN '需要巩固' THEN 0 WHEN '未学习' THEN 1 WHEN '已学习，待验证' THEN 2 ELSE 3 END,position",
@@ -316,7 +344,7 @@ def create_app(data_dir=None, provider=None):
                     raise HTTPException(400, "请先等待章节解析完成")
                 db.execute(
                     "UPDATE spaces SET mode='review',return_chapter=current_chapter,current_chapter=?,review_queue=? WHERE id=?",
-                    (queue[0], dumps(queue), space_id),
+                    (space["current_chapter"] or queue[0], dumps(queue), space_id),
                 )
             if value.mode == "learn" and space["mode"] == "review":
                 db.execute(
@@ -334,7 +362,10 @@ def create_app(data_dir=None, provider=None):
             if row["id"] in tasks:
                 tasks[row["id"]].cancel()
         with store.connect() as db:
-            db.execute("DELETE FROM summaries WHERE thread=?", (space_id,))
+            db.execute(
+                "DELETE FROM summaries WHERE thread=? OR thread IN (SELECT thread FROM messages WHERE space_id=?)",
+                (space_id, space_id),
+            )
             db.execute("DELETE FROM spaces WHERE id=?", (space_id,))
         return {"ok": True}
 
@@ -351,19 +382,60 @@ def create_app(data_dir=None, provider=None):
         return {"ok": True}
 
     @app.get("/api/messages")
-    def messages(space_id: str | None = None):
+    def messages(
+        space_id: str | None = None,
+        chapter_id: str | None = None,
+        question_id: str | None = None,
+        session_id: str | None = None,
+        node_id: str | None = None,
+    ):
+        from .review import root_chapter
+        from .model import ModelError
+
         if space_id:
             space_exists(space_id)
-        return store.all("SELECT * FROM messages WHERE thread=? ORDER BY created", (space_id or "partner",))
+        if session_id:
+            session = store.one(
+                "SELECT * FROM review_sessions WHERE id=? AND space_id=?", (session_id, space_id)
+            )
+            if not session or question_id not in {
+                f"{session_id}:{i}" for i in range(len(json.loads(session["questions"])))
+            }:
+                raise HTTPException(404, "复习题目不存在")
+            thread = f"review-question:{question_id}"
+        elif node_id:
+            try:
+                root = root_chapter(store, space_id, chapter_id)
+            except ModelError as exc:
+                raise HTTPException(404, str(exc)) from exc
+            row = store.one(
+                "SELECT * FROM review_maps WHERE space_id=? AND root_id=?", (space_id, root["id"])
+            )
+            if not row or node_id not in {n["id"] for n in json.loads(row["payload"])["nodes"]}:
+                raise HTTPException(404, "知识点不存在")
+            thread = f"node:{row['id']}:{node_id}"
+        elif question_id:
+            if not store.one(
+                "SELECT 1 FROM questions q JOIN chapters c ON c.id=q.chapter_id WHERE q.id=? AND c.space_id=?",
+                (question_id, space_id),
+            ):
+                raise HTTPException(404, "题目不存在")
+            thread = f"question:{question_id}"
+        elif chapter_id:
+            if not store.one("SELECT 1 FROM chapters WHERE id=? AND space_id=?", (chapter_id, space_id)):
+                raise HTTPException(404, "章节不存在")
+            thread = f"lecture:{chapter_id}"
+        else:
+            if space_id:
+                return store.all("SELECT * FROM messages WHERE space_id=? ORDER BY created", (space_id,))
+            thread = "partner"
+        return store.all("SELECT * FROM messages WHERE thread=? ORDER BY created", (thread,))
 
     @app.post("/api/spaces/{space_id}/actions", status_code=202)
     async def action(space_id: str, value: Action):
         space = space_exists(space_id)
         if value.action == "partner":
             raise HTTPException(400, "请使用独立陪聊入口")
-        if value.action == "ask" and re.search(r"(考前复习|帮我复习|进入复习)", value.text):
-            space = edit_space(space_id, SpaceEdit(mode="review"))
-            value.chapter_id = space["current_chapter"]
         chapter_id = value.chapter_id or space["current_chapter"]
         chapter = store.one(
             "SELECT * FROM chapters WHERE id=? AND space_id=? AND is_group=0", (chapter_id, space_id)
@@ -399,6 +471,20 @@ def create_app(data_dir=None, provider=None):
         )
         return {"ok": True}
 
+    @app.post("/api/spaces/{space_id}/preparation")
+    async def prepare_chapter(space_id: str):
+        space = space_exists(space_id)
+        chapter = store.one(
+            "SELECT * FROM chapters WHERE id=? AND space_id=?", (space["current_chapter"], space_id)
+        )
+        if not chapter:
+            raise HTTPException(400, "请先选择章节")
+        queue_chapter(store, chapter)
+        if not chapter["lesson"]:
+            store.write("UPDATE chapters SET preparation='queued' WHERE id=?", (chapter["id"],))
+        launch("prepare:" + space_id, prepare_space(app, space_id))
+        return {"ok": True}
+
     @app.post("/api/spaces/{space_id}/rebuild-outline", status_code=201)
     def rebuild_outline(space_id: str):
         old = space_exists(space_id)
@@ -410,13 +496,30 @@ def create_app(data_dir=None, provider=None):
         return create_space(SpaceInput(name=old["name"] + " · 新目录", document_ids=ids))
 
     @app.post("/api/spaces/{space_id}/answer-image")
-    async def answer_image(space_id: str, file: UploadFile = File(...)):
+    async def answer_image(
+        space_id: str, file: UploadFile = File(...), target: str | None = None, recognize: bool = True
+    ):
         from .model import ModelError
         from PIL import Image
         from io import BytesIO
         import warnings
 
         space_exists(space_id)
+        if target:
+            valid = store.one(
+                "SELECT 1 FROM questions q JOIN chapters c ON c.id=q.chapter_id WHERE q.id=? AND c.space_id=?",
+                (target, space_id),
+            )
+            if not valid and ":" in target:
+                sid, position = target.rsplit(":", 1)
+                session = store.one(
+                    "SELECT * FROM review_sessions WHERE id=? AND space_id=?", (sid, space_id)
+                )
+                valid = (
+                    session and position.isdigit() and int(position) < len(json.loads(session["questions"]))
+                )
+            if not valid:
+                raise HTTPException(404, "图片必须关联当前空间内的题目")
         content = await file.read(5 * 1024 * 1024 + 1)
         await file.close()
         if len(content) > 5 * 1024 * 1024:
@@ -440,6 +543,18 @@ def create_app(data_dir=None, provider=None):
         except Exception as exc:
             raise HTTPException(400, "图片损坏或尺寸过大，请缩小后重试") from exc
 
+        attachment_id = None
+        if target:
+            attachment_id = uid()
+            store.write(
+                "INSERT INTO attachments(id,space_id,target,mime,content,created) VALUES(?,?,?,?,?,?)",
+                (attachment_id, space_id, target, mime, content, now()),
+            )
+        if not recognize:
+            if not target:
+                raise HTTPException(400, "请选择题目")
+            return {"id": attachment_id}
+
         async def noop(_):
             pass
 
@@ -452,7 +567,44 @@ def create_app(data_dir=None, provider=None):
                 },
                 noop,
             )
-            return result  # Neither the image nor unconfirmed OCR is persisted.
+            return {**result, "id": attachment_id}
+        except ModelError as exc:
+            raise HTTPException(502, str(exc)) from exc
+
+    @app.get("/api/spaces/{space_id}/attachments/{attachment_id}")
+    def read_attachment(space_id: str, attachment_id: str):
+        space_exists(space_id)
+        row = store.one("SELECT * FROM attachments WHERE id=? AND space_id=?", (attachment_id, space_id))
+        if not row:
+            raise HTTPException(404, "图片不存在")
+        return Response(row["content"], media_type=row["mime"])
+
+    @app.post("/api/spaces/{space_id}/attachments/{attachment_id}/transcribe")
+    async def transcribe_attachment(space_id: str, attachment_id: str):
+        from .model import ModelError
+        from .attachments import attachment_image
+
+        space_exists(space_id)
+        row = store.one("SELECT * FROM attachments WHERE id=? AND space_id=?", (attachment_id, space_id))
+        if not row:
+            raise HTTPException(404, "图片不存在")
+        if row["transcription"]:
+            return json.loads(row["transcription"])
+
+        async def noop(_):
+            pass
+
+        try:
+            result, _ = await model.generate(
+                "transcribe",
+                {
+                    "request": "只转写学生作答，模糊处明确标注。",
+                    "_image": attachment_image(store, attachment_id, space_id, row["target"]),
+                },
+                noop,
+            )
+            store.write("UPDATE attachments SET transcription=? WHERE id=?", (dumps(result), attachment_id))
+            return result
         except ModelError as exc:
             raise HTTPException(502, str(exc)) from exc
 
@@ -470,7 +622,12 @@ def create_app(data_dir=None, provider=None):
             )
         except sqlite3.IntegrityError:
             raise HTTPException(409, "正在处理上一条请求，请等待或取消")
-        launch(run_id, run_action(app, run_id, value))
+        if value.action.startswith("review_"):
+            from .review import run_review
+
+            launch(run_id, run_review(app, run_id, value))
+        else:
+            launch(run_id, run_action(app, run_id, value))
         return {"id": run_id}
 
     @app.post("/api/partner/actions", status_code=202)
@@ -616,9 +773,24 @@ def create_app(data_dir=None, provider=None):
 
     @app.get("/api/spaces/{space_id}/export")
     def export_space(space_id: str):
+        from .review import public_session
+
         value = detail(space_id)
         value["messages"] = messages(space_id)
         value["memories"] = memories(space_id)
+        value["review_maps"] = [
+            {**row, "payload": json.loads(row["payload"])}
+            for row in store.all("SELECT * FROM review_maps WHERE space_id=?", (space_id,))
+        ]
+        value["review_sessions"] = [
+            {"map_id": row["map_id"], **public_session(row)}
+            for row in store.all(
+                "SELECT * FROM review_sessions WHERE space_id=? ORDER BY created", (space_id,)
+            )
+        ]
+        value["attachments"] = store.all(
+            "SELECT id,target,mime,created FROM attachments WHERE space_id=?", (space_id,)
+        )
         return JSONResponse(
             value, headers={"Content-Disposition": 'attachment; filename="learnest-export.json"'}
         )

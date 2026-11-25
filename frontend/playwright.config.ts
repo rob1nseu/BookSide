@@ -1,5 +1,6 @@
 import { defineConfig } from "@playwright/test";
 import path from "node:path";
+import os from "node:os";
 const python = path.resolve(
   "..",
   ".venv",
@@ -7,6 +8,7 @@ const python = path.resolve(
 );
 export default defineConfig({
   testDir: "./e2e",
+  outputDir: path.join(os.tmpdir(), "learnest-playwright-results"),
   timeout: 45000,
   fullyParallel: false,
   workers: 1,

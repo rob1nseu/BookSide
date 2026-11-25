@@ -33,7 +33,8 @@ export default function ChapterTree({
                     ? "等待准备"
                     : chapter.preparation === "failed"
                       ? "准备失败，可重试"
-                      : chapter.lesson && chapter.state === "未学习"
+                      : chapter.preparation === "ready" &&
+                          chapter.state === "未学习"
                         ? "讲解已准备"
                         : chapter.state}
               </small>

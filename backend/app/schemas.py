@@ -62,6 +62,28 @@ class MemoryCandidate(BaseModel):
     replaces_id: str | None = None
 
 
+class MapNode(BaseModel):
+    id: str = Field(pattern=r"^[a-zA-Z0-9_-]{1,50}$")
+    parent_id: str | None = None
+    label: str = Field(min_length=1, max_length=60)
+    summary: str = Field(min_length=5, max_length=2000)
+    chapter_id: str
+    sources: list[str] = Field(min_length=1, max_length=6)
+
+
+class KnowledgeMap(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    nodes: list[MapNode] = Field(min_length=1, max_length=30)
+
+
+class ReviewQuestion(Question):
+    node_id: str
+
+
+class ReviewPlan(BaseModel):
+    questions: list[ReviewQuestion] = Field(min_length=1, max_length=5)
+
+
 class MemoryBatch(BaseModel):
     summary: str = Field(max_length=5000)
     source_ids: list[str] = Field(max_length=40)
@@ -70,7 +92,25 @@ class MemoryBatch(BaseModel):
 
 class Action(BaseModel):
     action: Literal[
-        "teach", "ask", "answer", "hint", "solution", "next", "skip", "retry_grade", "train", "partner"
+        "teach",
+        "ask",
+        "ask_question",
+        "answer",
+        "hint",
+        "solution",
+        "next",
+        "skip",
+        "retry_grade",
+        "train",
+        "partner",
+        "review_map",
+        "review_start",
+        "review_answer",
+        "review_next",
+        "review_help",
+        "review_hint",
+        "review_end",
+        "review_node",
     ]
     chapter_id: str | None = None
     text: str = Field(default="", max_length=10000)
@@ -78,3 +118,7 @@ class Action(BaseModel):
     private: bool = False
     selected_option: str | None = Field(default=None, max_length=4000)
     prepare_chapter: bool = False
+    question_id: str | None = None
+    attachment_id: str | None = None
+    session_id: str | None = None
+    node_id: str | None = None

@@ -91,12 +91,20 @@ async def run_action(app, run_id, action):
     run = store.one("SELECT * FROM runs WHERE id=?", (run_id,))
     started = time.monotonic()
     usage = {}
+    last_progress = ("", 0.0)
 
     async def progress(text):
-        current = store.one("SELECT status FROM runs WHERE id=?", (run_id,))
+        nonlocal last_progress
+        if text == last_progress[0] and time.monotonic() - last_progress[1] < 0.75:
+            return
+        current = await asyncio.to_thread(store.one, "SELECT status,partial FROM runs WHERE id=?", (run_id,))
         if not current or current["status"] != "running":
             raise asyncio.CancelledError()
-        store.write("UPDATE runs SET partial=? WHERE id=? AND status='running'", (text, run_id))
+        if current["partial"] != text:
+            await asyncio.to_thread(
+                store.write, "UPDATE runs SET partial=? WHERE id=? AND status='running'", (text, run_id)
+            )
+        last_progress = (text, time.monotonic())
 
     try:
         await progress("正在准备当前任务…")
@@ -108,7 +116,17 @@ async def run_action(app, run_id, action):
                 "SELECT * FROM chapters WHERE id=? AND space_id=?", (action.chapter_id, run["space_id"])
             )
         )
-        thread = "partner" if partner else run["space_id"]
+        thread = (
+            "partner"
+            if partner
+            else (
+                f"question:{action.question_id}"
+                if action.action == "ask_question"
+                else f"lecture:{chapter['id']}"
+                if action.action == "ask"
+                else run["space_id"]
+            )
+        )
         evidence = (
             [] if partner else retrieve(store, run["space_id"], action.text or chapter["title"], chapter)
         )
@@ -146,7 +164,16 @@ async def run_action(app, run_id, action):
             context["_search"] = search
         question = get_question(store, chapter) if chapter else None
         question_value = json.loads(question["payload"]) if question else None
-        context["current_question"] = public_question(question)
+        if action.action != "ask":
+            context["current_question"] = public_question(question)
+        if action.action == "ask_question" and (not question or question["id"] != action.question_id):
+            raise ModelError("题目已切换，请重新打开这道题的提问入口")
+        if (
+            action.question_id
+            and action.action in ("answer", "hint", "solution", "next", "skip", "retry_grade")
+            and (not question or question["id"] != action.question_id)
+        ):
+            raise ModelError("题目已切换，答案未提交到其他题目")
         feedback = None
         selected_option = action.selected_option
         reasoning = action.text if selected_option else ""
@@ -186,7 +213,12 @@ async def run_action(app, run_id, action):
                 answer = disputed_attempt["answer"]
                 selected_option = disputed_attempt["selected_option"]
                 reasoning = disputed_attempt["reasoning"]
-            if not answer.strip() and not selected_option:
+            attachment_id = disputed_attempt["attachment_id"] if disputed_attempt else action.attachment_id
+            if attachment_id:
+                from .attachments import attachment_image
+
+                context["_image"] = attachment_image(store, attachment_id, run["space_id"], question["id"])
+            if not answer.strip() and not selected_option and not attachment_id:
                 raise ModelError("请先填写回答")
             if question_value["kind"] == "choice":
                 selected_option = selected_option or answer
@@ -200,7 +232,7 @@ async def run_action(app, run_id, action):
                     "next_step": "继续学习" if correct else "试着结合提示重新理解",
                     "sources": question_value["sources"],
                 }
-                if reasoning.strip():
+                if reasoning.strip() or attachment_id:
                     context.update(
                         question=question_value,
                         answer=selected_option,
@@ -219,7 +251,7 @@ async def run_action(app, run_id, action):
                         else "incorrect"
                     )
                 answer = selected_option + ("\n理由：" + reasoning if reasoning else "")
-            elif question_value["kind"] == "number":
+            elif question_value["kind"] == "number" and not attachment_id:
                 match = re.fullmatch(r"\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*(.*?)\s*", answer)
                 if match and match[2] != question_value["unit"] and re.search(r"[=+\\$*/^()]|\n", match[2]):
                     match = None
@@ -326,13 +358,14 @@ async def run_action(app, run_id, action):
                     "UPDATE attempts SET selected_option=?,reasoning=? WHERE id=?",
                     (selected_option, reasoning, attempt_id),
                 )
+                db.execute("UPDATE attempts SET attachment_id=? WHERE id=?", (attachment_id, attempt_id))
                 if disputed_attempt:
                     db.execute(
                         "UPDATE attempts SET review_of=? WHERE id=?", (disputed_attempt["id"], attempt_id)
                     )
                 result["attempt_id"] = attempt_id
                 recompute(db, chapter["id"])
-            if action.action in ("hint", "solution"):
+            if action.action in ("hint", "solution", "ask_question"):
                 db.execute(
                     "UPDATE chapters SET hint_used=1,revealed=? WHERE id=?",
                     (int(action.action == "solution" or chapter["revealed"]), chapter["id"]),

@@ -1,4 +1,11 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useState,
+  useRef,
+} from "react";
 import {
   ArrowLeft,
   Settings as SettingsIcon,
@@ -28,10 +35,12 @@ export default function App() {
   );
   const [nav, setNav] = useState(false);
   const [error, setError] = useState("");
+  const activeSpace = useRef(id);
+  activeSpace.current = id;
   const refresh = useCallback(async () => {
     if (!id) return;
-    const detail = await api<Space>(`/spaces/${id}`);
-    setSpace(detail);
+    const detail = await api<Space>(`/spaces/${id}?compact=true`);
+    if (activeSpace.current === id) setSpace(detail);
   }, [id]);
   useEffect(() => {
     void api<SettingsType>("/settings")
@@ -59,12 +68,74 @@ export default function App() {
       )
     )
       return;
-    const timer = setInterval(
-      () => void refresh().catch((e) => setError(e.message)),
-      1300,
-    );
-    return () => clearInterval(timer);
-  }, [space, refresh]);
+    const controller = new AbortController();
+    let inFlight = false;
+    const timer = setInterval(async () => {
+      if (document.hidden || inFlight || !space) return;
+      inFlight = true;
+      try {
+        const status = await api<{
+          chapters: Pick<
+            Space["chapters"][number],
+            "id" | "preparation" | "preparation_error" | "state"
+          >[];
+          documents: Pick<
+            Space["documents"][number],
+            "id" | "status" | "error"
+          >[];
+        }>(`/spaces/${space.id}/status`, { signal: controller.signal });
+        if (controller.signal.aborted) return;
+        const current = status.chapters.find(
+          (c) => c.id === space.current_chapter,
+        );
+        if (
+          status.chapters.length !== space.chapters.length ||
+          (current?.preparation === "ready" &&
+            !space.chapters.find((c) => c.id === current.id)?.lesson) ||
+          status.documents.some(
+            (d) =>
+              d.status !==
+              space.documents.find((old) => old.id === d.id)?.status,
+          )
+        ) {
+          await refresh();
+          return;
+        }
+        setSpace((old) => {
+          if (!old || old.id !== space.id) return old;
+          let changed = false;
+          const chapters = old.chapters.map((c) => {
+            const next = status.chapters.find((s) => s.id === c.id);
+            if (
+              next &&
+              (c.preparation !== next.preparation ||
+                c.state !== next.state ||
+                c.preparation_error !== next.preparation_error)
+            ) {
+              changed = true;
+              return { ...c, ...next };
+            }
+            return c;
+          });
+          return changed ? { ...old, chapters } : old;
+        });
+      } catch (e) {
+        if (!controller.signal.aborted) setError((e as Error).message);
+      } finally {
+        inFlight = false;
+      }
+    }, 2500);
+    return () => {
+      clearInterval(timer);
+      controller.abort();
+    };
+  }, [
+    space?.id,
+    space?.current_chapter,
+    space?.chapters.map((c) => c.preparation).join(","),
+    space?.documents.map((d) => d.status).join(","),
+    refresh,
+  ]);
   const closePanel = useCallback(() => setPanel(null), []);
   async function choose(chapterId: string) {
     try {
@@ -102,7 +173,7 @@ export default function App() {
               <div className="course-heading">
                 <strong>{space?.name || "正在读取…"}</strong>
                 <span>
-                  {space?.mode === "review" ? "复习顺序" : "学习章节"}
+                  {space?.mode === "review" ? "复习章节" : "学习章节"}
                 </span>
               </div>
               <div className="chapters">
@@ -113,29 +184,36 @@ export default function App() {
                     choose={(id) => void choose(id)}
                   />
                 ) : (
-                  (space?.mode === "review"
-                    ? space.review_queue.map((q) =>
-                        space.chapters.find((c) => c.id === q)!,
-                      )
-                    : space?.chapters || []
-                  )
-                    .filter(Boolean)
+                  (space?.chapters || [])
+                    .filter((chapter) => !chapter.parent_id)
                     .map((chapter, index) => (
                       <button
                         key={chapter.id}
                         className={
-                          chapter.id === space?.current_chapter
+                          chapter.id === space?.current_chapter ||
+                          chapter.id ===
+                            space?.chapters.find(
+                              (c) => c.id === space.current_chapter,
+                            )?.parent_id
                             ? "chapter selected"
                             : "chapter"
                         }
-                        onClick={() => void choose(chapter.id)}
+                        onClick={() => {
+                          const target = chapter.is_group
+                            ? space?.chapters.find(
+                                (c) =>
+                                  c.parent_id === chapter.id && !c.is_group,
+                              )
+                            : chapter;
+                          if (target) void choose(target.id);
+                        }}
                       >
                         <span className="chapter-number">
                           {String(index + 1).padStart(2, "0")}
                         </span>
                         <span>
                           {chapter.title}
-                          <small>{chapter.state}</small>
+                          <small>思维导图与练习</small>
                         </span>
                       </button>
                     ))
