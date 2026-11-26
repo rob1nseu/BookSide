@@ -53,7 +53,7 @@ export async function api<T>(
           ...options,
           signal: controller.signal,
           headers: {
-            "X-LearNest": "1",
+            "X-BookSide": "1",
             ...(!(options.body instanceof FormData)
               ? { "Content-Type": "application/json" }
               : {}),
@@ -92,7 +92,7 @@ export async function api<T>(
         }
         retrying = true;
         window.dispatchEvent(
-          new CustomEvent("learnest:retry", {
+          new CustomEvent("bookside:retry", {
             detail: {
               id,
               message: recovering,
@@ -109,7 +109,7 @@ export async function api<T>(
   } finally {
     if (retrying)
       window.dispatchEvent(
-        new CustomEvent("learnest:retry", { detail: { id, message: "" } }),
+        new CustomEvent("bookside:retry", { detail: { id, message: "" } }),
       );
   }
 }

@@ -25,7 +25,10 @@ class Store:
         self.root = root
         root.mkdir(parents=True, exist_ok=True)
         (root / "files").mkdir(exist_ok=True)
-        self.path = root / "learnest.sqlite3"
+        self.path = root / "bookside.sqlite3"
+        # Reuse existing records without moving a possibly open WAL database.
+        if not self.path.exists() and (root / "learnest.sqlite3").exists():
+            self.path = root / "learnest.sqlite3"
         existed = self.path.exists()
         backed_up = False
         with self.connect() as db:

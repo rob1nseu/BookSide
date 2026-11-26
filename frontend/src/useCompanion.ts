@@ -19,7 +19,7 @@ export function useCompanion() {
         connection.close();
         void fetch(`/api/companion/page/${id}`, {
           method: "DELETE",
-          headers: { "X-LearNest": "1" },
+          headers: { "X-BookSide": "1" },
           keepalive: true,
         }).catch(() => {});
       };

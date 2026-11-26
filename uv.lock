@@ -134,7 +134,7 @@ wheels = [
 ]
 
 [[package]]
-name = "learnest"
+name = "bookside"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

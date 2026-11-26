@@ -29,7 +29,7 @@ const MemoryPanel = lazy(() => import("./MemoryPanel"));
 export default function App() {
   useCompanion();
   const [id, setId] = useState<string | null>(() =>
-    localStorage.getItem("learnest:space"),
+    localStorage.getItem("bookside:space"),
   );
   const [space, setSpace] = useState<Space | null>(null);
   const [settings, setSettings] = useState<SettingsType | null>(null);
@@ -50,8 +50,8 @@ export default function App() {
       else retries.delete(id);
       setNetworkStatus([...retries.values()].at(-1) || "");
     };
-    window.addEventListener("learnest:retry", listener);
-    return () => window.removeEventListener("learnest:retry", listener);
+    window.addEventListener("bookside:retry", listener);
+    return () => window.removeEventListener("bookside:retry", listener);
   }, []);
   const activeSpace = useRef(id);
   activeSpace.current = id;
@@ -70,15 +70,15 @@ export default function App() {
     setLoadError("");
     let alive = true;
     if (id) {
-      localStorage.setItem("learnest:space", id);
+      localStorage.setItem("bookside:space", id);
       void refresh().catch((e) => {
         if (!alive) return;
         if (e instanceof ApiError && e.status === 404) {
           setId(null);
-          localStorage.removeItem("learnest:space");
+          localStorage.removeItem("bookside:space");
         } else setLoadError(e.message);
       });
-    } else localStorage.removeItem("learnest:space");
+    } else localStorage.removeItem("bookside:space");
     return () => {
       alive = false;
     };
@@ -272,7 +272,7 @@ export default function App() {
       </aside>
       <ResizeHandle
         target=".sidebar"
-        storage="learnest-directory-width"
+        storage="bookside-directory-width"
         initial={245}
         min={200}
         max={420}

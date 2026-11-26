@@ -24,7 +24,7 @@ def main():
         "models": "not called; model latency and teaching quality unmeasured",
         "production_processes": "1 Python API process; optional desktop adds 1 host; development Vite is separate",
     }
-    with tempfile.TemporaryDirectory(prefix="learnest-measure-") as temp:
+    with tempfile.TemporaryDirectory(prefix="bookside-measure-") as temp:
         root = Path(temp)
         generate(root / "samples")
         start = time.perf_counter()

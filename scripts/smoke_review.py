@@ -2,7 +2,6 @@
 
 import argparse
 import json
-import os
 import sys
 import tempfile
 import time
@@ -15,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from backend.app.main import create_app
 from backend.app.model import Provider
+from backend.app.config import setting
 
 
 def main():
@@ -24,13 +24,13 @@ def main():
     )
     if not parser.parse_args().live:
         raise SystemExit("Skipped: pass --live to use the locally configured provider.")
-    provider = Provider(Path(os.getenv("LEARNEST_DATA_DIR", "data")), demo=False)
+    provider = Provider(Path(setting("BOOKSIDE_DATA_DIR", "data")), demo=False)
     if not provider.public()["configured"]:
         raise SystemExit("Local provider is not configured.")
     report = {"model": provider.public()["model"], "checks": []}
-    with tempfile.TemporaryDirectory(prefix="learnest-live-review-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="bookside-live-review-") as temporary:
         with TestClient(create_app(Path(temporary), provider)) as client:
-            client.headers["X-LearNest"] = "1"
+            client.headers["X-BookSide"] = "1"
             pdf = pymupdf.open()
             page = pdf.new_page()
             page.insert_text((50, 50), "Chapter 1 Derivatives", fontsize=18)

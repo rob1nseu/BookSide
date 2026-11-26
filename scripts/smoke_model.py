@@ -3,7 +3,6 @@
 import argparse
 import asyncio
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -11,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from dotenv import load_dotenv
 from backend.app.db import now
 from backend.app.model import Provider, ModelError
+from backend.app.config import setting
 
 
 async def main():
@@ -20,7 +20,7 @@ async def main():
     if not args.live:
         raise SystemExit("Skipped: pass --live to opt in to a real API request.")
     load_dotenv()
-    provider = Provider(Path(os.getenv("LEARNEST_DATA_DIR", "data")), demo=False)
+    provider = Provider(Path(setting("BOOKSIDE_DATA_DIR", "data")), demo=False)
 
     async def progress(_):
         pass

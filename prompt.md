@@ -1,4 +1,4 @@
-# LearNest 开发文档
+# BookSide 开发文档
 
 > 本地实现已建立。启动与测试见 [docs/RUNNING.md](docs/RUNNING.md)，当前已实现范围、验证结果及限制见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)。下文继续作为完整产品目标，不代表所有条目已经通过验收。
 
@@ -875,9 +875,9 @@ Windows 桌面宠物可打开或聚焦应用，并提供普通 LLM 陪聊；聊�
 
 ## 二十、Agent 实践参考与实施约定
 
-以下参考于 2026-11-24 查阅；它们说明设计借鉴来源，不代表 LearNest 已实现或性能相同。开源实现会变化，继续采用前应核对当前代码、许可证与项目约束。
+以下参考于 2026-11-24 查阅；它们说明设计借鉴来源，不代表 BookSide 已实现或性能相同。开源实现会变化，继续采用前应核对当前代码、许可证与项目约束。
 
-| 来源 | 已核对的依据 | LearNest 的采用方式 |
+| 来源 | 已核对的依据 | BookSide 的采用方式 |
 | --- | --- | --- |
 | [Claude Code 官方记忆文档](https://code.claude.com/docs/en/memory) | 区分指令与自动记忆；简短索引、按需读取详细条目、可编辑和关闭记忆 | 保留少量偏好和按需检索详情，提供可管理记忆；以 SQLite 保存，不照搬文件存储。这里依据公开文档，不声称审查过其内部记忆引擎源码 |
 | [DeepTutor 有预算的教学记忆测试](https://github.com/HKUDS/DeepTutor/blob/1284116f92368480aef3a47f91b8df9e9b105062/tests/capabilities/test_mastery_bounded_memory.py) | 检查历史预算、原始记录保留、摘要失败水位及来源有效性 | 摘要作为可重建派生内容，压缩失败仍保留近期轮次与可回查原记录；以测试验证，不依赖提示词保证 |
@@ -885,6 +885,6 @@ Windows 桌面宠物可打开或聚焦应用，并提供普通 LLM 陪聊；聊�
 | [DeepTutor 上下文统计](https://github.com/HKUDS/DeepTutor/blob/1284116f92368480aef3a47f91b8df9e9b105062/deeptutor/agents/loop/context_budget.py) | 按实际请求统计消息、提示块及工具 Schema；区分估算；统计失败不影响主请求 | 对真实请求记录预算与用量，诊断失败不使教学失败，不增加默认可见的上下文仪表盘 |
 | [DeepTutor Agent 循环](https://github.com/HKUDS/DeepTutor/blob/1284116f92368480aef3a47f91b8df9e9b105062/deeptutor/agents/loop/agent_loop.py) | 存在有界探索与结束处理 | 借鉴有限循环与预算终止，保持单 Tutor、少量业务工具；具体上限是本项目初始默认值，不复制上游复杂调度 |
 
-DeepTutor 本次核对的 commit 为 `1284116f92368480aef3a47f91b8df9e9b105062`。上述范围、默认数量、天数和预算属于 LearNest 的产品及工程取舍，不是来源项目的统一标准，也不构成效果保证。
+DeepTutor 本次核对的 commit 为 `1284116f92368480aef3a47f91b8df9e9b105062`。上述范围、默认数量、天数和预算属于 BookSide 的产品及工程取舍，不是来源项目的统一标准，也不构成效果保证。
 
 实现时，对未明确的库选择、默认参数和提示词采取可测试的合理默认值，并记录在关键设计决定中；只有改变产品范围或核心交互时再讨论。开发从检查现有目录和环境开始，优先保证真实可用、状态清楚、边界可靠，再完善视觉细节。

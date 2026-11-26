@@ -5,10 +5,10 @@ const MarkdownView = lazy(() => import("./MarkdownView"));
 export function Brand() {
   return (
     <div className="brand">
-      <img src="/app-icon.svg" alt="LearNest 奶龙读书" width={40} height={40} />
+      <img src="/app-icon.svg" alt="BookSide 奶龙读书" width={40} height={40} />
       <div>
-        <strong>LearNest</strong>
-        <span>极简学习</span>
+        <strong>BookSide</strong>
+        <span>书边 · 极简学习</span>
       </div>
     </div>
   );

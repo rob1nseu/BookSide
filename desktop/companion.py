@@ -1,12 +1,12 @@
 """Optional source-run Qt companion: frontal reading pet and reliable URL entry."""
 
 import json
-import os
 import subprocess
 import sys
 import time
 import urllib.request
 from pathlib import Path
+from backend.app.config import setting
 
 from PySide6.QtCore import Qt, QTimer, QLockFile, QSettings, QUrl, QObject, QProcess
 from PySide6.QtGui import QPixmap, QIcon, QAction, QDesktopServices
@@ -26,7 +26,7 @@ def healthy():
 
 
 def open_learning_page():
-    # Never infer browser state from arbitrary window titles (editors also say LearNest).
+    # Never infer browser state from arbitrary window titles (editors also say BookSide).
     return QDesktopServices.openUrl(QUrl(URL))
 
 
@@ -66,7 +66,7 @@ class PageOpener(QObject):
     def reuse_or_open(self):
         self.pending = True
         request = QNetworkRequest(QUrl(URL + "/api/companion/open"))
-        request.setRawHeader(b"X-LearNest", b"1")
+        request.setRawHeader(b"X-BookSide", b"1")
         request.setTransferTimeout(2500)
         reply = self.network.post(request, b"")
 
@@ -138,7 +138,7 @@ class Pet(QLabel):
         self.setStyleSheet("background: transparent; border: none; padding: 0;")
         self.setFixedSize(130, 170)
         self.setAlignment(Qt.AlignCenter)
-        self.setToolTip("点击打开 LearNest · 拖动移动 · 右键更多")
+        self.setToolTip("点击打开 BookSide · 拖动移动 · 右键更多")
         self.origin = self.press_position = None
         self.moved = self.paused = False
         self.tick = 0
@@ -210,7 +210,7 @@ def main():
     app_icon = QIcon(str(ROOT / "frontend/public/app-icon.svg"))
     app.setWindowIcon(app_icon)
     app.setQuitOnLastWindowClosed(False)
-    data = Path(os.environ.get("LEARNEST_DATA_DIR", ROOT / "data"))
+    data = Path(setting("BOOKSIDE_DATA_DIR", ROOT / "data"))
     data.mkdir(parents=True, exist_ok=True)
     lock = QLockFile(str(data / "desktop.lock"))
 
@@ -228,7 +228,7 @@ def main():
         return
     if not (ROOT / "frontend/dist/index.html").is_file():
         QMessageBox.warning(
-            None, "需要构建前端", "请先运行根目录 start.ps1 -Desktop，或在 frontend 中运行 npm run build。"
+            None, "需要构建前端", "请先运行根目录 BookSide.ps1 -Desktop，或在 frontend 中运行 npm run build。"
         )
         return
     process = log = None
@@ -250,11 +250,15 @@ def main():
                 time.sleep(0.1)
             if not healthy():
                 QMessageBox.critical(
-                    None, "LearNest", "本地服务启动失败。请检查 8765 端口与 data/desktop-server.log。"
+                    None, "BookSide", "本地服务启动失败。请检查 8765 端口与 data/desktop-server.log。"
                 )
                 return
         frames = load_frames()
-        settings = QSettings("LearNest", "Companion")
+        settings = QSettings("BookSide", "Companion")
+        if settings.value("position") is None:
+            previous = QSettings("LearNest", "Companion").value("position")
+            if previous is not None:
+                settings.setValue("position", previous)
         pet = Pet(frames, open_app, settings)
         pet.activity_monitor = ActivityMonitor(pet)
         area = app.primaryScreen().availableGeometry()
@@ -263,20 +267,20 @@ def main():
         if saved is not None and any(s.availableGeometry().contains(saved) for s in app.screens()):
             pet.move(saved)
         tray = QSystemTrayIcon(app_icon, app)
-        opener.on_existing = lambda: tray.showMessage("LearNest 已打开", "已唤回学习页面；若浏览器限制自动置前，请切换到已有的 LearNest 标签页。", QSystemTrayIcon.Information, 3000)
+        opener.on_existing = lambda: tray.showMessage("BookSide 已打开", "已唤回学习页面；若浏览器限制自动置前，请切换到已有的 BookSide 标签页。", QSystemTrayIcon.Information, 3000)
         menu = QMenu()
         for label, callback in (
             ("打开学习网页", open_app),
             ("显示 / 隐藏宠物", lambda: pet.setVisible(not pet.isVisible())),
             ("暂停 / 恢复动画", lambda: setattr(pet, "paused", not pet.paused)),
-            ("退出 LearNest", app.quit),
+            ("退出 BookSide", app.quit),
         ):
             action = QAction(label, menu)
             action.triggered.connect(callback)
             menu.addAction(action)
         pet.menu = menu
         tray.setContextMenu(menu)
-        tray.setToolTip("LearNest")
+        tray.setToolTip("BookSide")
         tray.show()
         pet.show()
         open_app()

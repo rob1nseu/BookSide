@@ -2,12 +2,15 @@
 // Run from frontend: node scripts/audit-math.mjs [path-to-data-directory]
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import katex from 'katex';
 import { normalizeMath } from '../src/math.ts';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const python = path.join(root, '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
-const database = path.join(process.argv[2] ? path.resolve(process.argv[2]) : path.join(root,'data'), 'learnest.sqlite3');
+const dataDirectory = process.argv[2] ? path.resolve(process.argv[2]) : path.join(root,'data');
+const current = path.join(dataDirectory, 'bookside.sqlite3');
+const database = existsSync(current) ? current : path.join(dataDirectory, 'learnest.sqlite3');
 const script = String.raw`
 import sqlite3,json,sys,pathlib
 p=pathlib.Path(sys.argv[1])

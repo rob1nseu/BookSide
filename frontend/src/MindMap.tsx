@@ -116,7 +116,7 @@ export default function MindMap({
       requestAnimationFrame(() => expandButton.current?.focus());
     };
   }, [expanded]);
-  const storageKey = "learnest-map-size:" + concepts.map((c) => c.id).join(",");
+  const storageKey = "bookside-map-size:" + concepts.map((c) => c.id).join(",");
   const [sizes, setSizes] = useState<
     Record<string, { width: number; height: number }>
   >({});

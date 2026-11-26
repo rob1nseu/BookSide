@@ -2,15 +2,16 @@
 
 import os
 import sys
+from backend.app.config import setting
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
-    data = Path(os.environ.get("LEARNEST_DATA_DIR", ROOT / "data")).resolve()
+    data = Path(setting("BOOKSIDE_DATA_DIR", ROOT / "data")).resolve()
     data.mkdir(parents=True, exist_ok=True)
-    os.environ["LEARNEST_DATA_DIR"] = str(data)
+    os.environ["BOOKSIDE_DATA_DIR"] = str(data)
     if "--server" in sys.argv:
         import uvicorn
         from backend.app.main import create_app

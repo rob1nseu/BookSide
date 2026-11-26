@@ -11,7 +11,7 @@ public static class BrowserWindow {
   [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
 }
 '@
-$title = 'LearNest ' + [char]0x00b7 + ' ' + [char]0x6781 + [char]0x7b80 + [char]0x5b66 + [char]0x4e60
+$title = 'BookSide ' + [char]0x00b7 + ' ' + [char]0x6781 + [char]0x7b80 + [char]0x5b66 + [char]0x4e60
 $root = [System.Windows.Automation.AutomationElement]::RootElement
 $children = $root.FindAll([System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)
 foreach ($window in $children) {

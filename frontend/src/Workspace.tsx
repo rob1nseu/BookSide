@@ -610,14 +610,14 @@ export default function Workspace({
       {!reader && chapter && space.mode !== "review" && (
         <ResizeHandle
           target=".resource-rail"
-          storage="learnest-resources-width"
+          storage="bookside-resources-width"
           initial={300}
         />
       )}
       {reader && (
         <ResizeHandle
           target=".reader"
-          storage="learnest-reader-width"
+          storage="bookside-reader-width"
           initial={440}
         />
       )}

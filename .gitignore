@@ -26,7 +26,7 @@ frontend/public/pdf/
 # 审阅反馈文件
 docs/**/*.docx
 # 测试
-# Tests, lockfiles, migrations and license files belong in Git.
+# Lockfiles, migrations and license files belong in Git.
 # Local-only drafts, documents, logs, reports and editor state.
 /.local/
 /tmp/
@@ -56,3 +56,14 @@ Desktop.ini
 /.uv-cache/
 /.cache/
 /docs/eval-arithmetic*.json
+# Local development/validation materials (kept on disk).
+/.githooks/
+/tests/
+/backend/tests/
+/frontend/e2e/
+/frontend/src/**/*.test.ts
+/frontend/src/**/*.test.tsx
+/frontend/src/test-setup.ts
+/docs/*
+!/docs/ROADMAP.md
+!/docs/CONTRIBUTING.md

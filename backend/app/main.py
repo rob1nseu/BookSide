@@ -1,7 +1,6 @@
 import asyncio
 import hashlib
 import json
-import os
 import sqlite3
 import base64
 from contextlib import asynccontextmanager
@@ -17,6 +16,7 @@ from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .db import Store, dumps, now, uid
+from .config import setting
 from .documents import build_chapters, ingest, validate_file
 from .model import Provider
 from .schemas import Action
@@ -53,8 +53,8 @@ class MemoryInput(BaseModel):
 
 
 def create_app(data_dir=None, provider=None):
-    store = Store(Path(data_dir or os.getenv("LEARNEST_DATA_DIR", ROOT / "data")))
-    model = provider or Provider(store.root, os.getenv("LEARNEST_DEMO") == "1")
+    store = Store(Path(data_dir or setting("BOOKSIDE_DATA_DIR", ROOT / "data")))
+    model = provider or Provider(store.root, setting("BOOKSIDE_DEMO") == "1")
     tasks = {}
     browser_pages = {}
     closed_pages = deque(maxlen=128)
@@ -81,7 +81,7 @@ def create_app(data_dir=None, provider=None):
             task.cancel()
         await asyncio.gather(*list(tasks.values()), return_exceptions=True)
 
-    app = FastAPI(title="LearNest", lifespan=lifespan)
+    app = FastAPI(title="BookSide", lifespan=lifespan)
     app.state.store, app.state.provider = store, model
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
 
@@ -97,7 +97,7 @@ def create_app(data_dir=None, provider=None):
             "127.0.0.1:8765",
         ):
             return JSONResponse({"detail": "不允许的访问来源"}, status_code=403)
-        if request.method in ("POST", "PUT", "PATCH", "DELETE") and request.headers.get("x-learnest") != "1":
+        if request.method in ("POST", "PUT", "PATCH", "DELETE") and request.headers.get("x-bookside", request.headers.get("x-learnest")) != "1":
             return JSONResponse({"detail": "缺少本地应用请求标识"}, status_code=403)
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -877,7 +877,7 @@ def create_app(data_dir=None, provider=None):
             "SELECT id,target,mime,created FROM attachments WHERE space_id=?", (space_id,)
         )
         return JSONResponse(
-            value, headers={"Content-Disposition": 'attachment; filename="learnest-export.json"'}
+            value, headers={"Content-Disposition": 'attachment; filename="bookside-export.json"'}
         )
 
     dist = ROOT / "frontend" / "dist"

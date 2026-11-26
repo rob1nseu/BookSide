@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" shape-rendering="crispEdges">
-  <title>LearNest · 奶龙读书</title>
+  <title>BookSide · 奶龙读书</title>
   <!-- Two flat colors; integer coordinates preserve the pixel silhouette. -->
   <path fill="#F2CF55" d="M24 5h16v3h7v4h5v5h3v8h2v15H7V25h2v-8h3v-5h5V8h7z"/>
   <path fill="#536D59" d="M17 20h7v3h3v9H14v-9h3zm23 0h7v3h3v9H37v-9h3z"/>
