@@ -214,10 +214,8 @@ button.primary {
   padding: 0 4px 18px;
 }
 .resource-filter {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   padding: 8px 0 18px;
   font-size: 0.8rem;
@@ -228,15 +226,37 @@ button.primary {
   color: #6b786d;
 }
 .resource-filter label {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  white-space: nowrap;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  font-family: var(--sans, "Noto Sans SC Variable", sans-serif);
+  font-size: 12px;
+  line-height: 1.5;
 }
+.resource-select { position: relative; display: block; min-width: 0; }
+.resource-select > svg { position:absolute; right:12px; top:50%; transform:translateY(-50%); pointer-events:none; color:#647969; }
 .resource-filter select {
-  max-width: 210px;
-  padding: 8px !important;
+  appearance: none;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  height: 42px;
+  margin: 0;
+  padding: 0 36px 0 12px;
+  font: inherit;
+  font-size: 14px;
+  line-height: normal;
+  color: #254a3c;
+  background: #fffef9;
+  border: 1px solid #c9d3c6;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s;
 }
+.resource-filter select:hover { border-color: #7d9a83; }
+.resource-filter select:focus-visible { outline: 2px solid #42745a; outline-offset: 2px; box-shadow: 0 0 0 4px #42745a15; }
 .resource-row {
   display: grid;
   grid-template-columns: 35px minmax(0, 1fr);
@@ -323,6 +343,12 @@ button.primary {
 .map-canvas { resize:vertical; overflow:hidden; min-height:240px; max-height:85vh; }
 .map-expanded { position:fixed; inset:20px; z-index:100; background:var(--paper,#fffdf6); box-shadow:0 0 0 100vmax #0005; }
 .map-expanded .map-canvas { height:calc(100% - 60px); max-height:none; resize:none; }
+.map-dialog { width:100vw; height:100dvh; margin:0; padding:0; border:0; max-width:none; max-height:none; background:transparent; }
+.map-dialog::backdrop { background:#0005; }
+.map-dialog .map-expanded { box-shadow:0 12px 50px #0002; }
+.map-expanded .map-toolbar { padding-right:55px; }
+.map-close { position:absolute; top:10px; right:10px; width:36px; height:36px; z-index:2; }
+.map-expanded .map-outline.shown { max-height:calc(100% - 70px); overflow:auto; }
 .partner { resize:both; overflow:auto; min-width:280px; min-height:300px; max-width:90vw; }
 .brand img { object-fit:contain; flex:none; }
 .concept-node { width:100%; min-height:90px; height:100%; }

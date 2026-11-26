@@ -22,10 +22,37 @@ playwright-report/
 frontend/public/pdf/
 *.tsbuildinfo
 .ruff_cache/
-.env.example
+!.env.example
 # 审阅反馈文件
 docs/**/*.docx
 # 测试
-tests/
-!backend/tests/
-!backend/tests/*.py
+# Tests, lockfiles, migrations and license files belong in Git.
+# Local-only drafts, documents, logs, reports and editor state.
+/.local/
+/tmp/
+/logs/
+/coverage/
+htmlcov/
+.coverage.*
+*.log
+*.sqlite
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.bak
+*.tmp
+*.docx
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+/.uv-cache/
+/.cache/
+/docs/eval-arithmetic*.json

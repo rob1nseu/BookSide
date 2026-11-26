@@ -24,15 +24,24 @@ test("verified resources match each textbook, allow correction and use local edi
   const beforeWidth = Number(await separator.getAttribute("aria-valuenow"));
   await separator.focus();
   await separator.press("ArrowLeft");
-  await expect(separator).toHaveAttribute("aria-valuenow", String(beforeWidth + 20));
+  await expect(separator).toHaveAttribute(
+    "aria-valuenow",
+    String(beforeWidth + 20),
+  );
   await page.reload();
-  await expect(separator).toHaveAttribute("aria-valuenow", String(beforeWidth + 20));
+  await expect(separator).toHaveAttribute(
+    "aria-valuenow",
+    String(beforeWidth + 20),
+  );
   await page.getByText("教材之外", { exact: false }).click();
   await expect(page.getByRole("link", { name: /MIT 18.01SC/ })).toHaveAttribute(
     "href",
     "https://ocw.mit.edu/courses/18-01sc-single-variable-calculus-fall-2010/",
   );
+  await page.getByLabel("拓展方向").focus();
   await page.getByLabel("拓展方向").selectOption("机器学习");
+  await expect(page.getByRole("link", { name: /跟李沐学 AI/ })).toBeVisible();
+  await expect(page.getByLabel("拓展方向")).toBeFocused();
   await page.getByRole("button", { name: "阅读资料" }).click();
   await expect(page.getByLabel("教材拓展")).toBeHidden();
   await page.getByRole("button", { name: "关闭阅读器" }).click();
@@ -102,6 +111,39 @@ async function learn(page: Page) {
   ).toBeVisible();
   await page.getByRole("button", { name: "来试一道题" }).click();
 }
+
+test("lost action response reuses the same run and temporary page failure keeps the learning position", async ({
+  page,
+}) => {
+  await createSpace(page, "calculus.pdf");
+  const keys: string[] = [];
+  const runs: string[] = [];
+  await page.route("**/api/spaces/*/actions", async (route) => {
+    keys.push(route.request().postDataJSON().request_key);
+    const response = await route.fetch();
+    runs.push((await response.json()).id);
+    if (keys.length === 1) await route.abort("connectionreset");
+    else await route.fulfill({ response });
+  });
+  await learn(page);
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).toBe(keys[1]);
+  expect(runs[0]).toBe(runs[1]);
+  const spaceId = await page.evaluate(() =>
+    localStorage.getItem("learnest:space"),
+  );
+  let loads = 0;
+  await page.route(`**/api/spaces/${spaceId}?compact=true`, async (route) => {
+    if (++loads === 1) await route.fulfill({ status: 503 });
+    else await route.continue();
+  });
+  await page.reload();
+  await expect(page.getByLabel("作答输入框")).toBeVisible();
+  expect(
+    await page.evaluate(() => localStorage.getItem("learnest:space")),
+  ).toBe(spaceId);
+  await expect(page.locator(".error-banner")).toHaveCount(0);
+});
 async function viewportFits(page: Page) {
   expect(
     await page.evaluate(
@@ -115,6 +157,43 @@ async function screenshot(page: Page, name: string) {
     fullPage: true,
   });
 }
+
+test("an old chapter error is hidden and chapter preparation restarts automatically", async ({
+  page,
+}) => {
+  await createSpace(page, "calculus.pdf");
+  const id = await page.evaluate(() => localStorage.getItem("learnest:space"));
+  let injected = false,
+    submissions = 0;
+  await page.route(`**/api/spaces/${id}?compact=true`, async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    if (!injected) {
+      const chapter = data.chapters.find(
+        (c: { id: string }) => c.id === data.current_chapter,
+      );
+      chapter.preparation = "failed";
+      chapter.preparation_error = "模型返回的 JSON 结构无效，教学核验未通过";
+      injected = true;
+    }
+    await route.fulfill({ response, json: data });
+  });
+  await page.route(`**/api/spaces/${id}/actions`, async (route) => {
+    submissions++;
+    const response = await route.fetch();
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    await route.fulfill({ response });
+  });
+  await page.reload();
+  await expect(page.locator(".run-progress")).toContainText(
+    "有点小问题，等等哈...",
+  );
+  await expect(page.getByText(/JSON|教学核验/)).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "先理解，再往前走" }),
+  ).toBeVisible();
+  expect(submissions).toBe(1);
+});
 
 test("lecture help, question help and answer drafts remain independent across reload", async ({
   page,
@@ -217,6 +296,17 @@ test("chapter map -> cited concept -> review questions -> weak node -> saved ses
   await page.getByRole("button", { name: "考前复习", exact: true }).click();
   await page.getByRole("button", { name: "生成章节思维导图" }).click();
   await expect(page.locator(".react-flow__node")).toHaveCount(5);
+  await page.getByRole("button", { name: "放大查看" }).click();
+  const enlarged = page.getByRole("dialog", { name: "章节思维导图" });
+  await expect(enlarged).toBeVisible();
+  await screenshot(page, "map-expanded-close");
+  await expect(page.getByText("退出放大")).toHaveCount(0);
+  await enlarged.getByRole("button", { name: "关闭思维导图" }).click();
+  await expect(enlarged).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "放大查看" })).toBeFocused();
+  await page.getByRole("button", { name: "放大查看" }).click();
+  await page.keyboard.press("Escape");
+  await expect(enlarged).toHaveCount(0);
   await page.getByRole("button", { name: "折叠Chapter 1 Functions" }).click();
   await expect(page.locator(".react-flow__node")).toHaveCount(1);
   await page.getByRole("button", { name: "展开Chapter 1 Functions" }).click();

@@ -1,9 +1,10 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState, useRef } from "react";
 import { BookOpen, FileText, Pencil, Square } from "lucide-react";
 import { api, send } from "./api";
 import { Prose, statusLabel, verdictLabel } from "./components";
 import type { Space, Page, Message } from "./types";
 import { useRun } from "./useRun";
+import { recovering } from "./learningStatus";
 import AnswerEditor from "./AnswerEditor";
 import Inquiry from "./Inquiry";
 import ResizeHandle from "./ResizeHandle";
@@ -36,6 +37,33 @@ export default function Workspace({
   const [history, setHistory] = useState<Message[] | null>(null);
   const run = useRun(space.id, space.active_run, onRefresh, onError);
   const busy = !!run.active;
+  const [restarting, setRestarting] = useState(false);
+  const recovered = useRef(new Set<string>());
+  useEffect(() => {
+    if (
+      chapter &&
+      !chapter.lesson &&
+      chapter.preparation === "failed" &&
+      configured &&
+      space.mode !== "review" &&
+      !space.active_run &&
+      !busy &&
+      !run.disconnected &&
+      !recovered.current.has(chapter.id)
+    ) {
+      recovered.current.add(chapter.id);
+      setRestarting(true);
+      void act("teach").finally(() => setRestarting(false));
+    }
+  }, [
+    chapter?.id,
+    chapter?.preparation,
+    configured,
+    space.mode,
+    space.active_run,
+    busy,
+    run.disconnected,
+  ]);
   useEffect(() => {
     let alive = true;
     void Promise.all(
@@ -260,9 +288,6 @@ export default function Workspace({
                   <span className="drawn-sprout">✳</span>
                   <h2>从这一节开始</h2>
                   <p>先准备当前小节，所需先修知识会从讲义中检索。</p>
-                  {chapter.preparation_error && (
-                    <p role="alert">{chapter.preparation_error}</p>
-                  )}
                   <button
                     className="primary"
                     disabled={busy || !configured}
@@ -478,10 +503,19 @@ export default function Workspace({
               )}
               <details className="learning-tools">
                 <summary>学习记录与准备选项</summary>
-                {!!chapter.concepts?.length && <section aria-label="知识点学习证据">
-                  <p>根据最近两道不同题目的作答记录整理；辅助完成不计为独立验证。</p>
-                  {chapter.concepts.map(c => <p key={c.concept}><Prose inline>{c.concept}</Prose> · {c.state} · 独立通过 {c.independent} 题</p>)}
-                </section>}
+                {!!chapter.concepts?.length && (
+                  <section aria-label="知识点学习证据">
+                    <p>
+                      根据最近两道不同题目的作答记录整理；辅助完成不计为独立验证。
+                    </p>
+                    {chapter.concepts.map((c) => (
+                      <p key={c.concept}>
+                        <Prose inline>{c.concept}</Prose> · {c.state} · 独立通过{" "}
+                        {c.independent} 题
+                      </p>
+                    ))}
+                  </section>
+                )}
                 <button
                   disabled={busy || !configured}
                   onClick={() =>
@@ -520,10 +554,20 @@ export default function Workspace({
             </>
           )}
         </div>
+        {!busy && run.notice && (
+          <div className="run-progress" role="status">
+            <span>{run.notice}</span>
+            {run.disconnected ? (
+              <button onClick={run.reconnect}>重新连接</button>
+            ) : (
+              <button onClick={run.dismissNotice}>知道了</button>
+            )}
+          </div>
+        )}
         {busy && (
           <div className="run-progress" role="status">
             <span className="spinner" />
-            {run.progress}
+            {restarting ? recovering : run.progress}
             <button
               disabled={run.active === "pending"}
               onClick={() => void run.cancel()}
@@ -564,18 +608,28 @@ export default function Workspace({
         )}
       </main>
       {!reader && chapter && space.mode !== "review" && (
-        <ResizeHandle target=".resource-rail" storage="learnest-resources-width" initial={300} />
+        <ResizeHandle
+          target=".resource-rail"
+          storage="learnest-resources-width"
+          initial={300}
+        />
       )}
-      {reader && <ResizeHandle target=".reader" storage="learnest-reader-width" initial={440} />}
+      {reader && (
+        <ResizeHandle
+          target=".reader"
+          storage="learnest-reader-width"
+          initial={440}
+        />
+      )}
       {chapter && space.mode !== "review" && (
         <aside hidden={reader} className="resource-rail" aria-label="教材拓展">
-              <Suspense fallback={null}>
-                <Resources
-                  key={chapter.document_id}
-                  spaceId={space.id}
-                  documentId={chapter.document_id}
-                />
-              </Suspense>
+          <Suspense fallback={null}>
+            <Resources
+              key={chapter.document_id}
+              spaceId={space.id}
+              documentId={chapter.document_id}
+            />
+          </Suspense>
         </aside>
       )}
       {reader && currentDoc && (

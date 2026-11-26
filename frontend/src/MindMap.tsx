@@ -1,4 +1,12 @@
-import { memo, useMemo, useState, useEffect } from "react";
+import {
+  memo,
+  useMemo,
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+} from "react";
+import { X } from "lucide-react";
 import {
   ReactFlow,
   Background,
@@ -37,8 +45,14 @@ const ConceptCard = memo(function ConceptCard({
 }: NodeProps<ConceptNode>) {
   return (
     <div className={"concept-node " + (data.selected ? "selected" : "")}>
-      <NodeResizer isVisible={data.selected} minWidth={180} minHeight={90} maxWidth={600} maxHeight={400}
-        onResizeEnd={(_, size) => data.resize(size.width, size.height)} />
+      <NodeResizer
+        isVisible={data.selected}
+        minWidth={180}
+        minHeight={90}
+        maxWidth={600}
+        maxHeight={400}
+        onResizeEnd={(_, size) => data.resize(size.width, size.height)}
+      />
       <Handle type="target" position={Position.Left} />
       <strong>
         <Prose inline>{data.label}</Prose>
@@ -85,17 +99,49 @@ export default function MindMap({
   onSelect: (id: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const storageKey = "learnest-map-size:" + concepts.map(c => c.id).join(",");
-  const [sizes, setSizes] = useState<Record<string, { width: number; height: number }>>({});
+  const [dialogReady, setDialogReady] = useState(false);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const expandButton = useRef<HTMLButtonElement>(null);
+  useLayoutEffect(() => {
+    if (!expanded) {
+      setDialogReady(false);
+      return;
+    }
+    dialog.current?.showModal();
+    setDialogReady(true);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = overflow;
+      requestAnimationFrame(() => expandButton.current?.focus());
+    };
+  }, [expanded]);
+  const storageKey = "learnest-map-size:" + concepts.map((c) => c.id).join(",");
+  const [sizes, setSizes] = useState<
+    Record<string, { width: number; height: number }>
+  >({});
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(storageKey) || "{}");
-      setSizes(Object.fromEntries(Object.entries(saved || {}).filter(([, value]) => {
-        const v = value as {width:number; height:number};
-        return v && Number.isFinite(v.width) && Number.isFinite(v.height) && v.width >= 180 && v.width <= 600 && v.height >= 90 && v.height <= 400;
-      })) as Record<string, {width:number; height:number}>);
+      setSizes(
+        Object.fromEntries(
+          Object.entries(saved || {}).filter(([, value]) => {
+            const v = value as { width: number; height: number };
+            return (
+              v &&
+              Number.isFinite(v.width) &&
+              Number.isFinite(v.height) &&
+              v.width >= 180 &&
+              v.width <= 600 &&
+              v.height >= 90 &&
+              v.height <= 400
+            );
+          }),
+        ) as Record<string, { width: number; height: number }>,
+      );
+    } catch {
+      setSizes({});
     }
-    catch { setSizes({}); }
   }, [storageKey]);
   const [collapsed, setCollapsed] = useState<Set<string>>(
     () => new Set(concepts.filter((n) => n.parent_id).map((n) => n.id)),
@@ -116,8 +162,14 @@ export default function MindMap({
       const children = all.filter((c) => c.parent_id === id);
       const visible = collapsed.has(id) ? [] : children;
       const ys = visible.map((c) => place(c.id, depth + 1));
-      const rowHeight = Math.max(112, ...Object.values(sizes).map(s => s.height + 24));
-      const columnWidth = Math.max(260, ...Object.values(sizes).map(s => s.width + 42));
+      const rowHeight = Math.max(
+        112,
+        ...Object.values(sizes).map((s) => s.height + 24),
+      );
+      const columnWidth = Math.max(
+        260,
+        ...Object.values(sizes).map((s) => s.width + 42),
+      );
       const y = ys.length ? (ys[0] + ys.at(-1)!) / 2 : row++ * rowHeight;
       nodes.push({
         id,
@@ -128,11 +180,16 @@ export default function MindMap({
           label: n.label,
           state: id === "__root" ? "章节总览" : states[id] || "未验证",
           selected: selected === id,
-          resize: (width, height) => setSizes(old => {
-            const next = { ...old, [id]: { width, height } };
-            try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch { /* optional persistence */ }
-            return next;
-          }),
+          resize: (width, height) =>
+            setSizes((old) => {
+              const next = { ...old, [id]: { width, height } };
+              try {
+                localStorage.setItem(storageKey, JSON.stringify(next));
+              } catch {
+                /* optional persistence */
+              }
+              return next;
+            }),
           hasChildren: !!children.length,
           collapsed: collapsed.has(id),
           toggle: () =>
@@ -172,40 +229,71 @@ export default function MindMap({
         </li>
       ));
   }
-  return (
+  const content = (
     <section className={"mindmap " + (expanded ? "map-expanded" : "")}>
       <div className="map-toolbar">
         <span>点击知识点查看要点或练习</span>
-        <button onClick={() => setExpanded(!expanded)}>{expanded ? "退出放大" : "放大查看"}</button>
+        {!expanded && (
+          <button ref={expandButton} onClick={() => setExpanded(true)}>
+            放大查看
+          </button>
+        )}
         <button onClick={() => setOutline(!outline)}>
           {outline ? "图形视图" : "层级列表"}
         </button>
+        {expanded && (
+          <button
+            className="icon map-close"
+            onClick={() => setExpanded(false)}
+            aria-label="关闭思维导图"
+            title="关闭"
+          >
+            <X size={22} />
+          </button>
+        )}
       </div>
       {!outline && (
         <div className="map-canvas">
-          <ReactFlow
-            nodes={graph.nodes}
-            edges={graph.edges}
-            nodeTypes={nodeTypes}
-            nodesDraggable={false}
-            nodesConnectable={false}
-            deleteKeyCode={null}
-            minZoom={0.2}
-            maxZoom={1.8}
-            fitView
-            onNodeClick={(_, n) => {
-              if (n.id !== "__root") onSelect(n.id);
-            }}
-          >
-            <Background />
-            <Controls showInteractive={false} />
-            <Fit signature={graph.nodes.map((n) => n.id).join(",")} />
-          </ReactFlow>
+          {(!expanded || dialogReady) && (
+            <ReactFlow
+              nodes={graph.nodes}
+              edges={graph.edges}
+              nodeTypes={nodeTypes}
+              nodesDraggable={false}
+              nodesConnectable={false}
+              deleteKeyCode={null}
+              minZoom={0.2}
+              maxZoom={1.8}
+              fitView
+              onNodeClick={(_, n) => {
+                if (n.id !== "__root") onSelect(n.id);
+              }}
+            >
+              <Background />
+              <Controls showInteractive={false} />
+              <Fit signature={graph.nodes.map((n) => n.id).join(",")} />
+            </ReactFlow>
+          )}
         </div>
       )}
       <ul className={"map-outline " + (outline ? "shown" : "")}>
         {tree(null)}
       </ul>
     </section>
+  );
+  return expanded ? (
+    <dialog
+      ref={dialog}
+      className="map-dialog"
+      aria-label="章节思维导图"
+      onCancel={(event) => {
+        event.preventDefault();
+        setExpanded(false);
+      }}
+    >
+      {content}
+    </dialog>
+  ) : (
+    content
   );
 }

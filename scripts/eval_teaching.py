@@ -36,7 +36,7 @@ async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--live", action="store_true")
     parser.add_argument("--limit", type=int, default=40)
-    parser.add_argument("--output", default="docs/eval-arithmetic.json")
+    parser.add_argument("--output", default="data/evaluations/arithmetic.json")
     args = parser.parse_args()
     if not args.live:
         print(json.dumps(list(cases()), ensure_ascii=True, indent=2))
@@ -79,6 +79,7 @@ async def main():
         except ModelError:
             results.append({**case, "pass": False, "error": "provider_or_validation_error"})
         print(case["id"], results[-1]["pass"], flush=True)
+    Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     Path(args.output).write_text(
         json.dumps(
             {

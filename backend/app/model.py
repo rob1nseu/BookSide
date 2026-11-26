@@ -7,6 +7,8 @@ No provider credentials ever appear in public settings, runs, or errors.
 import asyncio
 import json
 import os
+import time
+import random
 from pathlib import Path
 
 import httpx
@@ -15,6 +17,7 @@ from pydantic import ValidationError
 from .db import dumps
 from .pedagogy import policy
 from .runtime import remaining, spend
+from .model_json import OutputError, parse_output
 from .schemas import Audit, Feedback, Lesson, Reply, MemoryBatch, Transcription, KnowledgeMap, ReviewPlan
 
 
@@ -22,10 +25,24 @@ class ModelError(Exception):
     pass
 
 
+class TransientModelError(ModelError):
+    pass
+
+
+class ContentError(ModelError):
+    """Safe to regenerate before any learning result is committed."""
+    pass
+
+
+RECOVERING = "有点小问题，等等哈..."
+
+
 class Provider:
     def __init__(self, root: Path, demo=False):
         self.path = root / "model.local.json"
         self.demo = demo
+        self.active_calls = 0
+        self.last_activity = 0.0
         self.config = {
             "model": os.getenv("DEEPSEEK_MODEL", "deepseek-flash"),
             "key": os.getenv("DEEPSEEK_API_KEY", ""),
@@ -54,6 +71,21 @@ class Provider:
         temporary.replace(self.path)
 
     async def request(self, messages, progress, tools=None):
+        for attempt in range(3):
+            if attempt:
+                spend("requests")
+            try:
+                return await self._request_once(messages, progress, tools)
+            except TransientModelError:
+                if attempt == 2:
+                    raise
+                delay = (2 ** attempt) + random.uniform(0, .25)
+                if remaining() <= delay + 1:
+                    raise
+                await progress(RECOVERING)
+                await asyncio.sleep(delay)
+
+    async def _request_once(self, messages, progress, tools=None):
         if not self.config["key"]:
             raise ModelError("尚未配置 DeepSeek。请在设置中保存密钥；资料管理仍可使用。")
         payload = {
@@ -86,7 +118,8 @@ class Provider:
                             402: "DeepSeek 账户额度不足",
                             429: "DeepSeek 请求过于频繁，请稍后重试",
                         }
-                        raise ModelError(
+                        error_type = TransientModelError if response.status_code in (408, 429, 500, 502, 503, 504) else ModelError
+                        raise error_type(
                             messages_by_code.get(
                                 response.status_code, f"DeepSeek 服务返回错误 ({response.status_code})"
                             )
@@ -99,13 +132,16 @@ class Provider:
                         if data == "[DONE]":
                             done = True
                             break
-                        event = json.loads(data)
+                        try:
+                            event = json.loads(data)
+                        except ValueError as exc:
+                            raise TransientModelError("模型连接中断，正在恢复") from exc
                         if event.get("usage"):
                             usage = event["usage"]
                         if event.get("choices"):
                             choice = event["choices"][0]
                             if choice.get("finish_reason") == "length":
-                                raise ModelError("模型输出超过预算，请重试或缩小学习范围")
+                                raise OutputError("JSON truncated: shorten the explanation and return complete required fields", content)
                             content += choice.get("delta", {}).get("content") or ""
                             for fragment in choice.get("delta", {}).get("tool_calls", []):
                                 index = fragment["index"]
@@ -119,16 +155,32 @@ class Provider:
                                     call["function"][field] += fragment.get("function", {}).get(field) or ""
                             if len(content) > 100000:
                                 raise ModelError("模型输出超过安全长度")
-                            await progress("正在整理讲解与反馈…")
+                            await progress("正在准备学习内容…")
                     if not done:
-                        raise ModelError("模型连接中断，结果未提交，请重试")
-        except (httpx.TimeoutException, httpx.NetworkError) as exc:
-            raise ModelError("DeepSeek 连接超时或网络中断，请重试") from exc
+                        raise TransientModelError("模型连接中断，结果未提交，请重试")
+        except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError) as exc:
+            raise TransientModelError("DeepSeek 连接超时或网络中断，请重试") from exc
         if calls:
             return {"_tool_calls": list(calls.values())}, usage
-        return json.loads(content), usage
+        return parse_output(content), usage
 
     async def generate(self, kind, context, progress):
+        self.active_calls += 1
+        self.last_activity = time.time()
+        recovering = False
+
+        async def display(text):
+            nonlocal recovering
+            recovering = recovering or text == RECOVERING
+            await progress(RECOVERING if recovering else text)
+
+        try:
+            return await self._generate_active(kind, context, display)
+        finally:
+            self.active_calls -= 1
+            self.last_activity = time.time()
+
+    async def _generate_active(self, kind, context, progress):
         if kind == "grade":
             if not context.get("_image") and str(context.get("answer", "")).strip().lower() in {"我不知道", "不知道", "不会", "i don't know", "i do not know"}:
                 return {"verdict": "uncertain", "error_type": "unknown", "explanation": "还没有可核对的作答。", "missing": [], "next_step": "可以查看一级提示，或跳过本题。", "sources": []}, {"rule": "explicit_no_answer"}
@@ -140,18 +192,33 @@ class Provider:
                     "scope": "只核对纯数值表达式；单位、题意和推理仍须检查"})
         try:
             async with asyncio.timeout(remaining()):
-                result, usage = await self._generate(kind, context, progress)
-                if not self.demo and kind in ("lesson", "review_plan"):
-                    await progress("正在核验题目条件、答案与教材依据…")
-                    audit, audit_usage = await self._generate("audit", {
-                        "candidate": result, "evidence": context.get("evidence", []),
-                    }, progress)
-                    usage = {"generation": usage, "audit": audit_usage, "quality": audit["verdict"]}
-                    if audit["verdict"] != "accept":
-                        raise ModelError("教学核验未通过：" + audit["reason"])
-                return result, usage
+                teaching = kind in ("lesson", "review_plan")
+                context = dict(context)
+                for regeneration in range(2 if teaching else 1):
+                    async def report(text):
+                        await progress(RECOVERING if regeneration else text)
+
+                    try:
+                        result, usage = await self._generate(kind, context, report)
+                        if not self.demo and teaching:
+                            await report("正在整理学习内容…")
+                            audit, audit_usage = await self._generate("audit", {
+                                "candidate": result, "evidence": context.get("evidence", []),
+                            }, report)
+                            usage = {"generation": usage, "audit": audit_usage, "quality": audit["verdict"]}
+                            if audit["verdict"] != "accept":
+                                context["revision"] = {"candidate": result, "issues": audit["reason"],
+                                    "instruction": "修正问题并重新生成完整内容，保持原引用范围。"}
+                                raise ContentError("这次还没准备好，请稍后再试。")
+                        usage["regenerations"] = regeneration
+                        return result, usage
+                    except (ContentError, TransientModelError):
+                        if not teaching or regeneration == 1:
+                            raise
+                        await progress(RECOVERING)
+                        await asyncio.sleep(.5)
         except TimeoutError as exc:
-            raise ModelError("本轮已达到 180 秒时间预算，结果未提交，请重试") from exc
+            raise ModelError("准备这节内容花的时间有点久，请稍后再试。学习记录还在。") from exc
 
     async def _generate(self, kind, context, progress):
         if self.demo:
@@ -239,8 +306,9 @@ class Provider:
             )
 
         usage_total["context_characters"] = text_size()
-        # At most four tool rounds and one JSON repair; final round has no tools.
-        for attempt in range(6):
+        # Four tool rounds, two structure repairs, shared request/deadline budget.
+        for attempt in range(7):
+            result = None
             try:
                 if text_size() > 120000:
                     raise ModelError("本轮上下文超过预算，请缩小学习范围")
@@ -280,12 +348,20 @@ class Provider:
                 parsed = schema.model_validate(result)
                 usage_total["tool_rounds"] = tool_rounds
                 return parsed.model_dump(), usage_total
-            except (ValueError, ValidationError, KeyError):
-                if repairs:
-                    raise ModelError("模型返回的 JSON 结构无效，未保存教学结果，请重试")
+            except (ValueError, ValidationError, KeyError) as exc:
+                if repairs >= 2:
+                    raise ContentError("这次还没准备好，请稍后再试。学习记录还在。") from exc
                 repairs += 1
+                await progress(RECOVERING)
+                if isinstance(exc, ValidationError):
+                    issue = dumps([{ "field": list(e["loc"]), "type": e["type"], "reason": e["msg"][:200] } for e in exc.errors()][:12])
+                else:
+                    issue = str(exc)[:300]
+                previous = getattr(exc, "raw", "") or (dumps(result) if result is not None else "")
+                if previous and not (isinstance(result, dict) and "_tool_calls" in result):
+                    messages.append({"role": "assistant", "content": previous[:20000]})
                 messages.append(
-                    {"role": "user", "content": "上次返回的 json 无效。请严格遵循 Schema，输出非空合法字段。"}
+                    {"role": "user", "content": "修正上次 JSON：" + issue + ". 严格遵循原 Schema，输出完整非空对象，保留原证据约束。缩短说明以免截断。LaTeX 反斜杠须双写。不要输出代码围栏。"}
                 )
         raise ModelError("模型已达到本轮调用预算，未返回有效结果")
 

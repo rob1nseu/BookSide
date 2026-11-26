@@ -5,6 +5,7 @@ import os
 import sqlite3
 import base64
 from contextlib import asynccontextmanager
+from collections import deque
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -55,6 +56,8 @@ def create_app(data_dir=None, provider=None):
     store = Store(Path(data_dir or os.getenv("LEARNEST_DATA_DIR", ROOT / "data")))
     model = provider or Provider(store.root, os.getenv("LEARNEST_DEMO") == "1")
     tasks = {}
+    browser_pages = {}
+    closed_pages = deque(maxlen=128)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -127,6 +130,51 @@ def create_app(data_dir=None, provider=None):
     @app.get("/api/health")
     def health():
         return {"ok": True, "model": model.public()}
+
+    @app.get("/api/companion/activity")
+    def companion_activity():
+        return {"active": getattr(model, "active_calls", 0),
+                "last_activity": getattr(model, "last_activity", 0)}
+
+    @app.get("/api/companion/page")
+    async def companion_page(request: Request, page_id: str = ""):
+        if not page_id or len(page_id) > 100:
+            raise HTTPException(400, "页面标识无效")
+        # A live connection, not a stale timestamp, represents an open browser tab.
+        async def events():
+            if page_id in closed_pages:
+                return
+            queue = asyncio.Queue(maxsize=1)
+            browser_pages[page_id] = queue
+            try:
+                yield 'data: {"type":"connected"}\n\n'
+                while not await request.is_disconnected():
+                    try:
+                        event = await asyncio.wait_for(queue.get(), timeout=1)
+                        yield "data: " + dumps(event) + "\n\n"
+                    except TimeoutError:
+                        yield ": keepalive\n\n"
+            finally:
+                if browser_pages.get(page_id) is queue:
+                    browser_pages.pop(page_id, None)
+        return StreamingResponse(events(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no"})
+
+    @app.delete("/api/companion/page/{page_id}")
+    async def companion_page_closed(page_id: str):
+        if len(page_id) > 100:
+            raise HTTPException(400, "页面标识无效")
+        closed_pages.append(page_id)
+        browser_pages.pop(page_id, None)
+        return {"ok": True}
+
+    @app.post("/api/companion/open")
+    async def companion_open():
+        if not browser_pages:
+            return {"existing": False}
+        queue = next(reversed(browser_pages.values()))
+        if queue.empty():
+            queue.put_nowait({"type": "focus"})
+        return {"existing": True}
 
     @app.get("/api/settings")
     def settings():

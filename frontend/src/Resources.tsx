@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import { ChevronDown } from "lucide-react";
 type Resource = {
   id: string;
   title: string;
@@ -32,19 +33,21 @@ export default function Resources({
   const [data, setData] = useState<Result | null>(null),
     [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
+  const [loading, setLoading] = useState(false);
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController();
     setError("");
-    setData(null);
+    setLoading(true);
     void api<Result>(
       `/spaces/${spaceId}/resources?document_id=${documentId}${topic ? `&topic=${encodeURIComponent(topic)}` : ""}`,
       { signal: controller.signal },
     )
-      .then(setData)
+      .then((result) => { if (!controller.signal.aborted) setData(result); })
       .catch((e) => {
         if (!controller.signal.aborted) setError(e.message);
-      });
+      })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [spaceId, documentId, topic, open, retry]);
   return (
@@ -72,7 +75,8 @@ export default function Resources({
               <div className="resource-filter">
                 <span>{data.document_name}</span>
                 <label>
-                  拓展方向
+                  <span>拓展方向</span>
+                  <span className="resource-select">
                   <select
                     aria-label="拓展方向"
                     value={topic}
@@ -83,14 +87,17 @@ export default function Resources({
                       <option key={t}>{t}</option>
                     ))}
                   </select>
+                  <ChevronDown size={16} aria-hidden="true" />
+                  </span>
                 </label>
               </div>
-              {!data.items.length && (
+              {loading && <p role="status">正在更新拓展资料…</p>}
+              {!loading && !data.items.length && (
                 <p>
                   暂未找到足够可靠的主题匹配。可以选择相关方向；当前资源目录尚未覆盖所有学科。
                 </p>
               )}
-              {data.items.map((r, i) => (
+              {!loading && data.items.map((r, i) => (
                 <article className="resource-row" key={r.id}>
                   <span className="resource-number">
                     {String(i + 1).padStart(2, "0")}

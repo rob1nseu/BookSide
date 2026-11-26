@@ -14,17 +14,20 @@ import {
   X,
   Brain,
 } from "lucide-react";
-import { api, send } from "./api";
+import { api, send, ApiError } from "./api";
 import { Brand, Dialog } from "./components";
 import Library from "./Library";
 import Workspace from "./Workspace";
 import ResizeHandle from "./ResizeHandle";
 import ChapterTree from "./ChapterTree";
+import { useCompanion } from "./useCompanion";
+import { learningStatus } from "./learningStatus";
 import type { Settings as SettingsType, Space } from "./types";
 const Settings = lazy(() => import("./Settings"));
 const Partner = lazy(() => import("./Partner"));
 const MemoryPanel = lazy(() => import("./MemoryPanel"));
 export default function App() {
+  useCompanion();
   const [id, setId] = useState<string | null>(() =>
     localStorage.getItem("learnest:space"),
   );
@@ -36,6 +39,20 @@ export default function App() {
   );
   const [nav, setNav] = useState(false);
   const [error, setError] = useState("");
+  const [networkStatus, setNetworkStatus] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [reload, setReload] = useState(0);
+  useEffect(() => {
+    const retries = new Map<string, string>();
+    const listener = (event: Event) => {
+      const { id, message } = (event as CustomEvent).detail;
+      if (message) retries.set(id, message);
+      else retries.delete(id);
+      setNetworkStatus([...retries.values()].at(-1) || "");
+    };
+    window.addEventListener("learnest:retry", listener);
+    return () => window.removeEventListener("learnest:retry", listener);
+  }, []);
   const activeSpace = useRef(id);
   activeSpace.current = id;
   const refresh = useCallback(async () => {
@@ -50,15 +67,22 @@ export default function App() {
   }, []);
   useEffect(() => {
     setSpace(null);
+    setLoadError("");
+    let alive = true;
     if (id) {
       localStorage.setItem("learnest:space", id);
       void refresh().catch((e) => {
-        setError(e.message);
-        setId(null);
-        localStorage.removeItem("learnest:space");
+        if (!alive) return;
+        if (e instanceof ApiError && e.status === 404) {
+          setId(null);
+          localStorage.removeItem("learnest:space");
+        } else setLoadError(e.message);
       });
     } else localStorage.removeItem("learnest:space");
-  }, [id, refresh]);
+    return () => {
+      alive = false;
+    };
+  }, [id, refresh, reload]);
   useEffect(() => {
     if (
       !space?.chapters.some((c) =>
@@ -246,7 +270,14 @@ export default function App() {
           </button>
         </div>
       </aside>
-      <ResizeHandle target=".sidebar" storage="learnest-directory-width" initial={245} min={200} max={420} left />
+      <ResizeHandle
+        target=".sidebar"
+        storage="learnest-directory-width"
+        initial={245}
+        min={200}
+        max={420}
+        left
+      />
       <div className="main-shell">
         {settings?.demo && (
           <div className="demo-banner">
@@ -254,8 +285,8 @@ export default function App() {
           </div>
         )}
         {error && (
-          <div className="error-banner" role="alert">
-            <span>{error}</span>
+          <div className="notice-banner" role="status">
+            <span>{learningStatus(error)}</span>
             <button
               className="icon"
               aria-label="关闭错误提示"
@@ -263,6 +294,12 @@ export default function App() {
             >
               <X size={18} />
             </button>
+          </div>
+        )}
+        {networkStatus && (
+          <div className="notice-banner" role="status">
+            <span className="spinner" />
+            {networkStatus}
           </div>
         )}
         {!id ? (
@@ -277,7 +314,21 @@ export default function App() {
             onOpen={setId}
           />
         ) : (
-          <div className="loading">正在恢复学习位置…</div>
+          <div className="loading" role="status">
+            {loadError ? (
+              <>
+                {loadError}{" "}
+                <button onClick={() => setReload((v) => v + 1)}>
+                  重新连接
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="spinner" />{" "}
+                {networkStatus || "正在恢复学习位置…"}
+              </>
+            )}
+          </div>
         )}
       </div>
       <button

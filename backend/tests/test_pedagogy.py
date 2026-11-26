@@ -63,7 +63,7 @@ async def test_audit_gates_publication(tmp_path, verdict):
     else:
         with pytest.raises(ModelError):
             await provider.generate("lesson", {"evidence": []}, progress)
-    assert calls == ["lesson", "audit"]
+    assert calls == ["lesson", "audit"] * (1 if verdict == "accept" else 2)
     assert policy("partner") == ""
 
 
