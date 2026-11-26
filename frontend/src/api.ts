@@ -49,16 +49,17 @@ export async function api<T>(
       if (options.signal?.aborted) abort();
       const timeout = attempts > 1 ? setTimeout(abort, 15000) : undefined;
       try {
+        const headers = new Headers(options.headers);
+        // Older local servers may still be running after the product rename.
+        headers.set("X-BookSide", "1");
+        headers.set("X-LearNest", "1");
+        if (!(options.body instanceof FormData) && !headers.has("Content-Type")) {
+          headers.set("Content-Type", "application/json");
+        }
         const response = await fetch("/api" + path, {
           ...options,
           signal: controller.signal,
-          headers: {
-            "X-BookSide": "1",
-            ...(!(options.body instanceof FormData)
-              ? { "Content-Type": "application/json" }
-              : {}),
-            ...options.headers,
-          },
+          headers,
         });
         if (!response.ok) {
           let detail = "连接暂时不可用，请稍后重试";

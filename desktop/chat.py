@@ -23,6 +23,7 @@ class LocalClient(QObject):
     def request(self, method, path, payload, callback, attempt=0):
         request = QNetworkRequest(QUrl(self.base_url + "/api" + path))
         request.setRawHeader(b"X-BookSide", b"1")
+        request.setRawHeader(b"X-LearNest", b"1")
         request.setHeader(QNetworkRequest.ContentTypeHeader, "application/json")
         request.setTransferTimeout(8000)
         if method == "GET":

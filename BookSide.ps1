@@ -1,21 +1,29 @@
 param([switch]$Demo, [switch]$Desktop, [switch]$Check)
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
-if (-not $Check -and -not $Desktop) {
+if (-not $Check) {
     $existing = $null
     try {
         $health = Invoke-RestMethod 'http://127.0.0.1:8765/api/health' -TimeoutSec 2
         if ($health.ok) {
             $schema = Invoke-RestMethod 'http://127.0.0.1:8765/openapi.json' -TimeoutSec 2
-            if ($schema.info.title -in @('BookSide', 'LearNest')) { $existing = $health }
+            if ($schema.info.title -in @('BookSide', 'LearNest')) {
+                $existing = $health
+                $existingTitle = $schema.info.title
+            }
         }
     } catch { }
     if ($existing) {
-        Write-Host 'BookSide is already running: http://127.0.0.1:8765'
-        Write-Host 'Reusing the existing service. No dependencies or files were changed.'
-        Write-Host 'To load code changes or switch Demo mode, stop the previous launcher first.'
-        Write-Host 'If it was started with the desktop pet, use its Exit BookSide menu.'
-        return
+        if ($existingTitle -eq 'LearNest') {
+            throw 'An older server is running on port 8765. Exit the previous desktop pet from its tray menu (or Ctrl+C in its launcher), then run BookSide.cmd again. Your local learning data will be kept.'
+        }
+        if (-not $Desktop) {
+            Write-Host 'BookSide is already running: http://127.0.0.1:8765'
+            Write-Host 'Reusing the existing service. No dependencies or files were changed.'
+            Write-Host 'To load code changes or switch Demo mode, stop the previous launcher first.'
+            Write-Host 'If it was started with the desktop pet, use its Exit BookSide menu.'
+            return
+        }
     }
 }
 foreach ($tool in @('uv', 'node', 'npm.cmd')) {

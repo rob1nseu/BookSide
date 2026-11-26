@@ -68,6 +68,7 @@ class PageOpener(QObject):
         self.pending = True
         request = QNetworkRequest(QUrl(URL + "/api/companion/open"))
         request.setRawHeader(b"X-BookSide", b"1")
+        request.setRawHeader(b"X-LearNest", b"1")
         request.setTransferTimeout(2500)
         reply = self.network.post(request, b"")
 
