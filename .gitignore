@@ -22,7 +22,7 @@ playwright-report/
 frontend/public/pdf/
 *.tsbuildinfo
 .ruff_cache/
-!.env.example
+/prompt.md
 # 审阅反馈文件
 docs/**/*.docx
 # 测试
@@ -57,6 +57,7 @@ Desktop.ini
 /.cache/
 /docs/eval-arithmetic*.json
 # Local development/validation materials (kept on disk).
+/desktop/assets/README.md
 /.githooks/
 /tests/
 /backend/tests/

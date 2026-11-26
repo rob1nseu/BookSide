@@ -9,7 +9,6 @@ import {
 import {
   ArrowLeft,
   Settings as SettingsIcon,
-  Sprout,
   Menu,
   X,
   Brain,
@@ -24,7 +23,6 @@ import { useCompanion } from "./useCompanion";
 import { learningStatus } from "./learningStatus";
 import type { Settings as SettingsType, Space } from "./types";
 const Settings = lazy(() => import("./Settings"));
-const Partner = lazy(() => import("./Partner"));
 const MemoryPanel = lazy(() => import("./MemoryPanel"));
 export default function App() {
   useCompanion();
@@ -34,9 +32,6 @@ export default function App() {
   const [space, setSpace] = useState<Space | null>(null);
   const [settings, setSettings] = useState<SettingsType | null>(null);
   const [panel, setPanel] = useState<"settings" | "memory" | null>(null);
-  const [partner, setPartner] = useState(
-    new URLSearchParams(location.search).has("chat"),
-  );
   const [nav, setNav] = useState(false);
   const [error, setError] = useState("");
   const [networkStatus, setNetworkStatus] = useState("");
@@ -331,19 +326,6 @@ export default function App() {
           </div>
         )}
       </div>
-      <button
-        className="pet-button"
-        aria-label="打开小芽陪聊"
-        title="小芽 · 聊一聊"
-        onClick={() => setPartner(!partner)}
-      >
-        <Sprout size={29} />
-      </button>
-      {partner && (
-        <Suspense fallback={null}>
-          <Partner close={() => setPartner(false)} />
-        </Suspense>
-      )}
       {panel && (
         <Dialog
           title={panel === "settings" ? "设置" : "记忆"}

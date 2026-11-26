@@ -7,6 +7,7 @@ import time
 import urllib.request
 from pathlib import Path
 from backend.app.config import setting
+from desktop.chat import ChatWindow
 
 from PySide6.QtCore import Qt, QTimer, QLockFile, QSettings, QUrl, QObject, QProcess
 from PySide6.QtGui import QPixmap, QIcon, QAction, QDesktopServices
@@ -166,7 +167,7 @@ class Pet(QLabel):
         if self.paused and frame == 1:
             frame = 0  # Pause motion, retain the truthful activity/sleep state.
         self.current_frame = frame
-        pixmap = self.frames[frame].scaled(self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        pixmap = self.frames[frame].scaled(self.size(), Qt.KeepAspectRatio, Qt.FastTransformation)
         self.setPixmap(pixmap)
         # No rectangular hit area around the transparent sprite.
         from PySide6.QtGui import QRegion
@@ -260,6 +261,12 @@ def main():
             if previous is not None:
                 settings.setValue("position", previous)
         pet = Pet(frames, open_app, settings)
+        chat = ChatWindow(URL, parent=pet)
+
+        def open_chat():
+            pet.last_interaction = time.monotonic()
+            chat.open_chat()
+
         pet.activity_monitor = ActivityMonitor(pet)
         area = app.primaryScreen().availableGeometry()
         pet.move(area.right() - pet.width() - 20, area.bottom() - pet.height() - 20)
@@ -271,6 +278,7 @@ def main():
         menu = QMenu()
         for label, callback in (
             ("打开学习网页", open_app),
+            ("和桌宠聊一聊", open_chat),
             ("显示 / 隐藏宠物", lambda: pet.setVisible(not pet.isVisible())),
             ("暂停 / 恢复动画", lambda: setattr(pet, "paused", not pet.paused)),
             ("退出 BookSide", app.quit),

@@ -46,7 +46,7 @@ export default function MemoryPanel({ spaceId }: { spaceId?: string }) {
         <select value={scope} onChange={(e) => setScope(e.target.value)}>
           {spaceId && <option value="space">仅当前课程</option>}
           <option value="global">所有课程的通用偏好</option>
-          <option value="partner">仅小芽陪聊</option>
+          <option value="partner">仅桌宠陪聊</option>
         </select>
       </label>
       <button className="primary" disabled={!text.trim()} onClick={add}>
@@ -62,7 +62,7 @@ export default function MemoryPanel({ spaceId }: { spaceId?: string }) {
             {item.scope === "global"
               ? "通用偏好"
               : item.scope === "partner"
-                ? "小芽陪聊"
+                ? "桌宠陪聊"
                 : "当前课程"}{" "}
             ·{" "}
             {item.source_id

@@ -24,7 +24,7 @@ def check(staged=False, history=False):
         forbidden = (
             path.startswith("data/")
             or name in ("model.local.json", "model.local.tmp")
-            or (name.startswith(".env") and name != ".env.example")
+            or name.startswith(".env")
         )
         try:
             content = git("show", ":" + path) if staged else open(path, "rb").read()
