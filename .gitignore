@@ -1,6 +1,9 @@
 .venv/
+.venv-build/
 node_modules/
 dist/
+build/
+*.spec
 data/
 .env
 .env.local

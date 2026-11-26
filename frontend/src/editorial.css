@@ -312,3 +312,29 @@ button.primary {
     margin-top: 12px;
   }
 }
+
+/* Workspace finishing: flexible reading surfaces and aligned actions. */
+.more-actions { display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+.task-actions { flex-wrap:wrap; gap:12px; }
+.task-actions button { white-space:nowrap; min-height:40px; }
+.resource-rail { flex:0 0 300px; width:300px; max-width:40vw; overflow:auto; padding:22px; border-left:1px solid var(--line); }
+.resource-rail .resources { margin-top:0; }
+.resource-rail .resource-item { grid-template-columns:25px minmax(0,1fr); }
+.map-canvas { resize:vertical; overflow:hidden; min-height:240px; max-height:85vh; }
+.map-expanded { position:fixed; inset:20px; z-index:100; background:var(--paper,#fffdf6); box-shadow:0 0 0 100vmax #0005; }
+.map-expanded .map-canvas { height:calc(100% - 60px); max-height:none; resize:none; }
+.partner { resize:both; overflow:auto; min-width:280px; min-height:300px; max-width:90vw; }
+.brand img { object-fit:contain; flex:none; }
+.concept-node { width:100%; min-height:90px; height:100%; }
+@media(min-width:761px) {
+  .sidebar { width:var(--sidebar-width,245px); }
+  .main-shell { margin-left:var(--sidebar-width,245px); }
+  .sidebar-resize { position:fixed; left:calc(var(--sidebar-width,245px) - 4px); top:0; bottom:0; z-index:22; }
+}
+.resize-handle { width:8px; padding:0; border:0; flex:0 0 8px; cursor:col-resize; touch-action:none; background:transparent; border-radius:0; }
+.resize-handle:hover,.resize-handle:focus-visible { background:#c4d5c3; }
+@media(min-width:761px) { .resource-rail { width:var(--panel-width,300px); flex-basis:var(--panel-width,300px); } .reader { width:var(--panel-width,440px); max-width:60vw; } }
+@media(max-width:760px) { .resize-handle { display:none; } }
+@media(max-width:1100px) { .resource-rail { flex-basis:260px; padding:14px; } }
+@media(min-width:761px) { .resource-rail { flex-basis:var(--panel-width,300px); } }
+@media(max-width:760px) { .resource-rail { flex:none; width:auto; max-width:none; border-left:0; border-top:1px solid var(--line); } .workspace-layout { flex-direction:column; } .map-expanded { inset:8px; } }

@@ -3,6 +3,8 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class Question(BaseModel):
+    concept: str = Field(default="", max_length=100)
+    hints: list[str] = Field(default_factory=list, max_length=3)
     kind: Literal["choice", "number", "short"] = "short"
     prompt: str = Field(min_length=3, max_length=4000)
     answer: str = Field(min_length=1, max_length=4000)
@@ -15,6 +17,8 @@ class Question(BaseModel):
 
     @model_validator(mode="after")
     def valid(self):
+        if len(set(x.strip() for x in self.options)) != len(self.options):
+            raise ValueError("选择题选项不能重复")
         if self.kind == "choice" and (len(self.options) < 2 or self.answer not in self.options):
             raise ValueError("选择题答案必须属于选项")
         if self.kind == "number":
@@ -37,6 +41,7 @@ class Lesson(BaseModel):
 
 
 class Feedback(BaseModel):
+    error_type: Literal["concept", "condition", "reasoning", "calculation", "unit", "unreadable", "none", "unknown"] = "unknown"
     verdict: Literal["correct", "partial", "incorrect", "uncertain"]
     explanation: str = Field(min_length=1, max_length=6000)
     missing: list[str] = Field(default_factory=list, max_length=10)
@@ -48,6 +53,11 @@ class Reply(BaseModel):
     text: str = Field(min_length=1, max_length=12000)
     sources: list[str] = Field(default_factory=list, max_length=6)
     supplement: bool = False
+
+
+class Audit(BaseModel):
+    verdict: Literal["accept", "reject", "uncertain"]
+    reason: str = Field(min_length=1, max_length=2000)
 
 
 class Transcription(BaseModel):

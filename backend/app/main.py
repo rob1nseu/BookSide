@@ -269,6 +269,10 @@ def create_app(data_dir=None, provider=None):
             )
             for attempt in chapter["attempts"]:
                 attempt["feedback"] = json.loads(attempt["feedback"])
+            from .pedagogy import concept_summary
+            questions = [dict(json.loads(q["payload"]), id=q["id"]) for q in store.all(
+                "SELECT id,payload FROM questions WHERE chapter_id=?", (chapter["id"],))]
+            chapter["concepts"] = concept_summary([q for q in questions if q.get("concept")], list(reversed(chapter["attempts"])))
         docs = store.all(
             "SELECT d.* FROM documents d JOIN space_documents sd ON sd.document_id=d.id WHERE sd.space_id=?",
             (space_id,),
@@ -689,6 +693,11 @@ def create_app(data_dir=None, provider=None):
                 await asyncio.sleep(0.25)
 
         return StreamingResponse(stream(), media_type="text/event-stream")
+
+    @app.get("/api/runs/{run_id}/stages")
+    def run_stages(run_id: str):
+        get_run(run_id)
+        return store.all("SELECT stage,created FROM run_stages WHERE run_id=? ORDER BY id", (run_id,))
 
     @app.post("/api/runs/{run_id}/cancel")
     def cancel(run_id: str):

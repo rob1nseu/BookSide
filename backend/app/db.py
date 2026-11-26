@@ -26,12 +26,21 @@ class Store:
         root.mkdir(parents=True, exist_ok=True)
         (root / "files").mkdir(exist_ok=True)
         self.path = root / "learnest.sqlite3"
+        existed = self.path.exists()
+        backed_up = False
         with self.connect() as db:
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("CREATE TABLE IF NOT EXISTS migrations(version INTEGER PRIMARY KEY)")
             for file in sorted((Path(__file__).parent / "migrations").glob("*.sql")):
                 version = int(file.stem.split("_")[0])
                 if not db.execute("SELECT 1 FROM migrations WHERE version=?", (version,)).fetchone():
+                    if existed and not backed_up:
+                        import time
+                        backup_dir = root / "backups"
+                        backup_dir.mkdir(exist_ok=True)
+                        with sqlite3.connect(backup_dir / f"before-migration-{time.time_ns()}.sqlite3") as backup:
+                            db.backup(backup)
+                        backed_up = True
                     db.executescript(
                         "BEGIN IMMEDIATE;\n"
                         + file.read_text(encoding="utf-8")

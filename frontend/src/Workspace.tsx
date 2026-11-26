@@ -6,6 +6,7 @@ import type { Space, Page, Message } from "./types";
 import { useRun } from "./useRun";
 import AnswerEditor from "./AnswerEditor";
 import Inquiry from "./Inquiry";
+import ResizeHandle from "./ResizeHandle";
 const PdfReader = lazy(() => import("./PdfReader"));
 const ReviewPanel = lazy(() => import("./ReviewPanel"));
 const Resources = lazy(() => import("./Resources"));
@@ -440,8 +441,7 @@ export default function Workspace({
                         >
                           跳过这一题
                         </button>
-                        <details className="more-actions">
-                          <summary>更多</summary>
+                        <div className="more-actions">
                           <button
                             disabled={busy}
                             onClick={() => void act("solution")}
@@ -454,7 +454,7 @@ export default function Workspace({
                           >
                             针对性练一轮
                           </button>
-                        </details>
+                        </div>
                       </div>
                     </>
                   ) : (
@@ -476,15 +476,12 @@ export default function Workspace({
                   {citations(run.result.sources)}
                 </section>
               )}
-              <Suspense fallback={null}>
-                <Resources
-                  key={chapter.document_id}
-                  spaceId={space.id}
-                  documentId={chapter.document_id}
-                />
-              </Suspense>
               <details className="learning-tools">
                 <summary>学习记录与准备选项</summary>
+                {!!chapter.concepts?.length && <section aria-label="知识点学习证据">
+                  <p>根据最近两道不同题目的作答记录整理；辅助完成不计为独立验证。</p>
+                  {chapter.concepts.map(c => <p key={c.concept}><Prose inline>{c.concept}</Prose> · {c.state} · 独立通过 {c.independent} 题</p>)}
+                </section>}
                 <button
                   disabled={busy || !configured}
                   onClick={() =>
@@ -566,6 +563,21 @@ export default function Workspace({
           </footer>
         )}
       </main>
+      {!reader && chapter && space.mode !== "review" && (
+        <ResizeHandle target=".resource-rail" storage="learnest-resources-width" initial={300} />
+      )}
+      {reader && <ResizeHandle target=".reader" storage="learnest-reader-width" initial={440} />}
+      {chapter && space.mode !== "review" && (
+        <aside hidden={reader} className="resource-rail" aria-label="教材拓展">
+              <Suspense fallback={null}>
+                <Resources
+                  key={chapter.document_id}
+                  spaceId={space.id}
+                  documentId={chapter.document_id}
+                />
+              </Suspense>
+        </aside>
+      )}
       {reader && currentDoc && (
         <Suspense fallback={<aside className="reader">正在打开阅读器…</aside>}>
           <PdfReader

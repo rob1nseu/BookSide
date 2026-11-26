@@ -20,12 +20,23 @@ test("verified resources match each textbook, allow correction and use local edi
 }) => {
   const errors = watchErrors(page);
   await createSpace(page, "calculus.pdf");
+  const separator = page.getByRole("separator", { name: "调整侧栏宽度" });
+  const beforeWidth = Number(await separator.getAttribute("aria-valuenow"));
+  await separator.focus();
+  await separator.press("ArrowLeft");
+  await expect(separator).toHaveAttribute("aria-valuenow", String(beforeWidth + 20));
+  await page.reload();
+  await expect(separator).toHaveAttribute("aria-valuenow", String(beforeWidth + 20));
   await page.getByText("教材之外", { exact: false }).click();
   await expect(page.getByRole("link", { name: /MIT 18.01SC/ })).toHaveAttribute(
     "href",
     "https://ocw.mit.edu/courses/18-01sc-single-variable-calculus-fall-2010/",
   );
   await page.getByLabel("拓展方向").selectOption("机器学习");
+  await page.getByRole("button", { name: "阅读资料" }).click();
+  await expect(page.getByLabel("教材拓展")).toBeHidden();
+  await page.getByRole("button", { name: "关闭阅读器" }).click();
+  await expect(page.getByLabel("拓展方向")).toHaveValue("机器学习");
   await expect(page.getByRole("link", { name: /跟李沐学 AI/ })).toHaveAttribute(
     "href",
     "https://space.bilibili.com/1567748478",

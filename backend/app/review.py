@@ -10,6 +10,7 @@ from .model import ModelError
 from .schemas import KnowledgeMap, ReviewPlan, Feedback, Reply
 from .tutoring import validate_sources, history_context
 from .attachments import attachment_image
+from .runtime import bounded_action
 
 
 def root_chapter(store, space_id, chapter_id):
@@ -118,6 +119,7 @@ def detail(store, space_id, chapter_id):
     }
 
 
+@bounded_action
 async def run_review(app, run_id, action):
     store, provider = app.state.store, app.state.provider
     run = store.one("SELECT * FROM runs WHERE id=?", (run_id,))
@@ -134,6 +136,7 @@ async def run_review(app, run_id, action):
             store.write, "UPDATE runs SET partial=? WHERE id=? AND status='running'", (text, run_id)
         )
         last = text
+        await asyncio.to_thread(store.write, "INSERT INTO run_stages(run_id,stage,created) VALUES(?,?,?)", (run_id, text, now()))
 
     try:
         await progress("正在整理本章复习内容…")
@@ -231,6 +234,9 @@ async def run_review(app, run_id, action):
                 position = session["position"]
                 q = questions[position] if position < len(questions) else None
                 target = f"{session['id']}:{position}"
+                hint_row = store.one("SELECT level FROM hint_levels WHERE scope=?", (target,))
+                hint_level = min(3, (hint_row["level"] if hint_row else 0) + 1)
+                context["hint_level"] = hint_level
                 if action.action != "review_end" and (not q or action.question_id != target):
                     raise ModelError("复习题目已切换，请刷新后继续")
                 if action.action in ("review_answer", "review_help", "review_hint"):
@@ -278,7 +284,8 @@ async def run_review(app, run_id, action):
                             history=history_context(store, f"review-question:{target}"),
                         )
                         if action.action == "review_hint":
-                            reply = {"text": q["hint"], "sources": q["sources"]}
+                            hints = q.get("hints") or [q["hint"]]
+                            reply = {"text": hints[min(hint_level, len(hints)) - 1], "sources": q["sources"]}
                         else:
                             reply, usage = await provider.generate("reply", context, progress)
                             reply = Reply.model_validate(reply).model_dump()
@@ -320,6 +327,7 @@ async def run_review(app, run_id, action):
                         (position + 1, "done" if end else "active", dumps(attempts), session["id"]),
                     )
                 if action.action in ("review_help", "review_hint"):
+                    db.execute("INSERT INTO hint_levels(scope,level) VALUES(?,?) ON CONFLICT(scope) DO UPDATE SET level=excluded.level", (target, hint_level))
                     assisted = sorted(set(json.loads(session["assisted"]) + [position]))
                     db.execute(
                         "UPDATE review_sessions SET assisted=? WHERE id=?", (dumps(assisted), session["id"])

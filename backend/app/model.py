@@ -13,7 +13,9 @@ import httpx
 from pydantic import ValidationError
 
 from .db import dumps
-from .schemas import Feedback, Lesson, Reply, MemoryBatch, Transcription, KnowledgeMap, ReviewPlan
+from .pedagogy import policy
+from .runtime import remaining, spend
+from .schemas import Audit, Feedback, Lesson, Reply, MemoryBatch, Transcription, KnowledgeMap, ReviewPlan
 
 
 class ModelError(Exception):
@@ -127,9 +129,27 @@ class Provider:
         return json.loads(content), usage
 
     async def generate(self, kind, context, progress):
+        if kind == "grade":
+            if not context.get("_image") and str(context.get("answer", "")).strip().lower() in {"我不知道", "不知道", "不会", "i don't know", "i do not know"}:
+                return {"verdict": "uncertain", "error_type": "unknown", "explanation": "还没有可核对的作答。", "missing": [], "next_step": "可以查看一级提示，或跳过本题。", "sources": []}, {"rule": "explicit_no_answer"}
+            from .arithmetic import value
+            answer_value = value(str(context.get("answer", "")))
+            reference_value = value(str(context.get("question", {}).get("answer", "")))
+            if answer_value is not None and reference_value is not None:
+                context = dict(context, arithmetic_check={"equivalent": answer_value == reference_value,
+                    "scope": "只核对纯数值表达式；单位、题意和推理仍须检查"})
         try:
-            async with asyncio.timeout(180):
-                return await self._generate(kind, context, progress)
+            async with asyncio.timeout(remaining()):
+                result, usage = await self._generate(kind, context, progress)
+                if not self.demo and kind in ("lesson", "review_plan"):
+                    await progress("正在核验题目条件、答案与教材依据…")
+                    audit, audit_usage = await self._generate("audit", {
+                        "candidate": result, "evidence": context.get("evidence", []),
+                    }, progress)
+                    usage = {"generation": usage, "audit": audit_usage, "quality": audit["verdict"]}
+                    if audit["verdict"] != "accept":
+                        raise ModelError("教学核验未通过：" + audit["reason"])
+                return result, usage
         except TimeoutError as exc:
             raise ModelError("本轮已达到 180 秒时间预算，结果未提交，请重试") from exc
 
@@ -139,8 +159,10 @@ class Provider:
             return demo_response(kind, context), {"demo": True}
         context = dict(context)
         search = context.pop("_search", None)
+        read_page = context.pop("_read_page", None)
         image = context.pop("_image", None)
         schema = {
+            "audit": Audit,
             "lesson": Lesson,
             "grade": Feedback,
             "reply": Reply,
@@ -173,7 +195,7 @@ class Provider:
             "记忆必须标注原始用户消息 source_id；只在明确纠正已有偏好时填写 replaces_id。摘要保留未解决事项，不推断掌握程度。"
         )
         messages = [
-            {"role": "system", "content": system + "\nSchema: " + dumps(schema.model_json_schema())},
+            {"role": "system", "content": system + "\n当前任务规则：" + policy(kind) + "\nSchema: " + dumps(schema.model_json_schema())},
             {"role": "user", "content": dumps(context)},
         ]
         if image:
@@ -202,6 +224,10 @@ class Provider:
             else None
         )
         repairs = 0
+        if tools and read_page:
+            tools.append({"type": "function", "function": {
+                "name": "read_material_page", "description": "补读当前学习空间的指定原页，核对完整定义与条件。",
+                "parameters": {"type": "object", "properties": {"page_id": {"type": "string", "maxLength": 100}}, "required": ["page_id"], "additionalProperties": False}}})
         tool_rounds = 0
 
         def text_size():
@@ -218,17 +244,23 @@ class Provider:
             try:
                 if text_size() > 120000:
                     raise ModelError("本轮上下文超过预算，请缩小学习范围")
+                spend("requests")
                 result, usage = await self.request(messages, progress, tools if tool_rounds < 4 else None)
                 usage_total[str(attempt)] = usage
                 if "_tool_calls" in result:
                     if not search or tool_rounds >= 4:
                         raise ModelError("模型请求了未授权工具或超过工具轮数预算")
+                    spend("tools")
                     calls = result["_tool_calls"]
                     if len(calls) != 1:
                         raise ModelError("每轮仅允许一次资料检索")
                     call = calls[0]
                     arguments = json.loads(call["function"]["arguments"])
-                    if (
+                    reading = call["function"]["name"] == "read_material_page" and read_page
+                    if reading:
+                        if set(arguments) != {"page_id"} or not isinstance(arguments["page_id"], str) or len(arguments["page_id"]) > 100:
+                            raise ModelError("原页请求不合法")
+                    elif (
                         call["function"]["name"] != "search_materials"
                         or set(arguments) != {"query"}
                         or not isinstance(arguments["query"], str)
@@ -236,7 +268,7 @@ class Provider:
                     ):
                         raise ModelError("模型工具请求不符合当前权限范围")
                     await progress("正在补充检索当前空间的资料…")
-                    found = search(arguments["query"])
+                    found = read_page(arguments["page_id"]) if reading else search(arguments["query"])
                     messages.extend(
                         [
                             {"role": "assistant", "content": None, "tool_calls": calls},

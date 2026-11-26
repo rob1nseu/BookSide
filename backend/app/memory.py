@@ -2,6 +2,7 @@
 
 from .db import dumps, now, uid
 from .schemas import MemoryBatch
+from .runtime import bounded_action
 
 
 def generation(store):
@@ -13,6 +14,7 @@ def paused(store):
     return bool(store.one("SELECT 1 FROM settings WHERE key='memory_paused' AND value='true'"))
 
 
+@bounded_action
 async def consolidate(store, provider, thread, space_id):
     if paused(store):
         return

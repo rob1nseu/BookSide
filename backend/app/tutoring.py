@@ -7,6 +7,8 @@ import time
 from .db import dumps, now, uid
 from .documents import retrieve
 from .model import ModelError
+from .pedagogy import concept_summary
+from .runtime import bounded_action
 from .schemas import Feedback, Lesson, Reply
 
 
@@ -52,9 +54,16 @@ def recompute(db, chapter_id):
             attempted = True
         if rows and json.loads(rows[0]["feedback"])["verdict"] == "correct" and not rows[0]["assisted"]:
             passed += 1
-    state = (
-        "已掌握" if questions and passed * 2 > len(questions) else "需要巩固" if attempted else "已学习，待验证"
-    )
+    has_payload = any(r[1] == "payload" for r in db.execute("PRAGMA table_info(questions)"))
+    full_questions = [dict(json.loads(q["payload"]), id=q["id"]) for q in db.execute(
+        "SELECT id,payload FROM questions WHERE chapter_id=?", (chapter_id,)).fetchall()] if has_payload else []
+    full_attempts = [dict(a, feedback=json.loads(a["feedback"])) for a in db.execute(
+        "SELECT * FROM attempts WHERE chapter_id=? ORDER BY created DESC", (chapter_id,)).fetchall()] if full_questions else []
+    concepts = concept_summary(full_questions, full_attempts)
+    # Legacy questions have no stable concept tags; preserve their established state.
+    tagged = full_questions and all(q.get("concept") for q in full_questions)
+    mastered = all(c["state"] == "已验证" for c in concepts) if tagged else bool(questions and passed * 2 > len(questions))
+    state = "已掌握" if mastered else "需要巩固" if attempted else "已学习，待验证"
     db.execute(
         "UPDATE chapters SET state=?,passed_at=CASE WHEN ? IS NULL THEN NULL ELSE COALESCE(passed_at,?) END WHERE id=?",
         (state, now() if state == "已掌握" else None, now(), chapter_id),
@@ -86,6 +95,7 @@ def history_context(store, thread):
     return {"recent": list(reversed(result)), "summary": summary["text"] if summary else ""}
 
 
+@bounded_action
 async def run_action(app, run_id, action):
     store, provider = app.state.store, app.state.provider
     run = store.one("SELECT * FROM runs WHERE id=?", (run_id,))
@@ -101,6 +111,7 @@ async def run_action(app, run_id, action):
         if not current or current["status"] != "running":
             raise asyncio.CancelledError()
         if current["partial"] != text:
+            await asyncio.to_thread(store.write, "INSERT INTO run_stages(run_id,stage,created) VALUES(?,?,?)", (run_id, text, now()))
             await asyncio.to_thread(
                 store.write, "UPDATE runs SET partial=? WHERE id=? AND status='running'", (text, run_id)
             )
@@ -162,8 +173,20 @@ async def run_action(app, run_id, action):
                 return found
 
             context["_search"] = search
+            def read_page(page_id):
+                page = store.one("SELECT p.* FROM pages p JOIN space_documents s ON s.document_id=p.document_id WHERE p.id=? AND s.space_id=?", (page_id, run["space_id"]))
+                if not page:
+                    raise ModelError("原页不属于当前学习空间")
+                page["text"] = page["text"][:18000]
+                evidence[:] = [p for p in evidence if p["id"] != page_id] + [page]
+                return [page]
+            context["_read_page"] = read_page
         question = get_question(store, chapter) if chapter else None
         question_value = json.loads(question["payload"]) if question else None
+        hint_scope = "question:" + question["id"] if question else None
+        hint_row = store.one("SELECT level FROM hint_levels WHERE scope=?", (hint_scope,)) if hint_scope else None
+        hint_level = min(3, (hint_row["level"] if hint_row else 0) + 1)
+        context["hint_level"] = hint_level
         if action.action != "ask":
             context["current_question"] = public_question(question)
         if action.action == "ask_question" and (not question or question["id"] != action.question_id):
@@ -295,7 +318,7 @@ async def run_action(app, run_id, action):
             if not question:
                 raise ModelError("当前没有题目")
             result = {
-                "text": question_value["hint"]
+                "text": (question_value.get("hints") or [question_value["hint"]])[min(hint_level, len(question_value.get("hints") or [question_value["hint"]])) - 1]
                 if action.action == "hint"
                 else question_value["answer"] + "\n\n" + question_value["rubric"],
                 "sources": question_value["sources"],
@@ -366,6 +389,8 @@ async def run_action(app, run_id, action):
                 result["attempt_id"] = attempt_id
                 recompute(db, chapter["id"])
             if action.action in ("hint", "solution", "ask_question"):
+                if action.action != "solution":
+                    db.execute("INSERT INTO hint_levels(scope,level) VALUES(?,?) ON CONFLICT(scope) DO UPDATE SET level=excluded.level", (hint_scope, hint_level))
                 db.execute(
                     "UPDATE chapters SET hint_used=1,revealed=? WHERE id=?",
                     (int(action.action == "solution" or chapter["revealed"]), chapter["id"]),

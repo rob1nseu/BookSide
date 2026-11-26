@@ -1,0 +1,4 @@
+CREATE TABLE hint_levels (
+    scope TEXT PRIMARY KEY,
+    level INTEGER NOT NULL DEFAULT 0 CHECK(level BETWEEN 0 AND 3)
+);

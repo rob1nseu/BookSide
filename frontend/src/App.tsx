@@ -18,6 +18,7 @@ import { api, send } from "./api";
 import { Brand, Dialog } from "./components";
 import Library from "./Library";
 import Workspace from "./Workspace";
+import ResizeHandle from "./ResizeHandle";
 import ChapterTree from "./ChapterTree";
 import type { Settings as SettingsType, Space } from "./types";
 const Settings = lazy(() => import("./Settings"));
@@ -245,6 +246,7 @@ export default function App() {
           </button>
         </div>
       </aside>
+      <ResizeHandle target=".sidebar" storage="learnest-directory-width" initial={245} min={200} max={420} left />
       <div className="main-shell">
         {settings?.demo && (
           <div className="demo-banner">

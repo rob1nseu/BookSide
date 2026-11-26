@@ -46,6 +46,7 @@ export type Question = {
   position: number;
 };
 export type Chapter = {
+  concepts?: { concept: string; state: string; independent: number; assisted: number; errors: string[] }[];
   id: string;
   document_id: string;
   title: string;

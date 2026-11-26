@@ -1,11 +1,11 @@
 import { lazy, Suspense, useEffect, useRef, type ReactNode } from "react";
-import { X, Sprout } from "lucide-react";
+import { X } from "lucide-react";
 const MarkdownView = lazy(() => import("./MarkdownView"));
 
 export function Brand() {
   return (
     <div className="brand">
-      <Sprout size={38} strokeWidth={1.6} />
+      <img src="/seu-emblem.png" alt="东南大学校徽" width={36} height={36} />
       <div>
         <strong>LearNest</strong>
         <span>极简学习</span>

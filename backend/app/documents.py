@@ -207,4 +207,13 @@ def retrieve(store, space_id, query, chapter=None, limit=6):
         return sum(min(text.count(term), 5) for term in set(terms)) + (20 if local else 0)
 
     ranked = sorted((p for p in pages if len(p["text"]) >= 15), key=score, reverse=True)[:limit]
-    return [dict(p, text=p["text"][:4500], notes=p["notes"][:1500]) for p in ranked]
+    result = []
+    for p in ranked:
+        # Rank overlapping passages, retaining page identity for existing citation links.
+        text = p["text"]
+        passages = [text[i:i + 1500] for i in range(0, len(text), 1200)]
+        ordered = sorted(range(len(passages)), key=lambda i: -sum(
+            min(passages[i].lower().count(t), 5) for t in set(terms)))[:3]
+        excerpt = "\n?\n".join(passages[i] for i in sorted(ordered))
+        result.append(dict(p, text=excerpt, notes=p["notes"][:1500]))
+    return result
