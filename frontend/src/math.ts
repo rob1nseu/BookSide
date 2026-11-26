@@ -8,13 +8,17 @@ export function normalizeMath(input: string): string {
   return protectedParts
     .map((part, index) => {
       if (index % 2) return part;
-      return part.replace(
+      const normalized = part.replace(
         /(?<!\\)\\\[([\s\S]*?)(?<!\\)\\\]|(?<!\\)\\\(([^\n]*?)(?<!\\)\\\)/g,
         (_match, block: string | undefined, inline: string | undefined) =>
           block !== undefined
             ? `\n\n$$\n${block.trim()}\n$$\n\n`
             : `$${inline}$`,
       );
+      // GFM parses table boundaries before inline math. Encode pipes inside
+      // math as equivalent TeX commands so absolute values remain one cell.
+      return normalized.replace(/\$\$[\s\S]*?\$\$|(?<!\\)\$[^\n$]+?(?<!\\)\$/g,
+        (formula) => formula.replace(/\\\|/g, "\\Vert ").replace(/\|/g, "\\vert "));
     })
     .join("");
 }

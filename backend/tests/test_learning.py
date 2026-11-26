@@ -39,7 +39,7 @@ def test_learning_answers_hidden_and_progress(client):
     action(client, s["id"], "next")
     result = action(client, s["id"], "answer", text="结合定义与适用条件解释")
     assert result["status"] == "done", result
-    assert client.get("/api/spaces/" + s["id"]).json()["chapters"][0]["state"] == "通过当前检查"
+    assert client.get("/api/spaces/" + s["id"]).json()["chapters"][0]["state"] == "已掌握"
 
 
 def test_hints_and_skips_not_independent_pass(client):
@@ -50,7 +50,7 @@ def test_hints_and_skips_not_independent_pass(client):
     action(client, s["id"], "next")
     action(client, s["id"], "answer", text="结合定义与适用条件解释")
     chapter = client.get("/api/spaces/" + s["id"]).json()["chapters"][0]
-    assert chapter["state"] != "通过当前检查"
+    assert chapter["state"] != "已掌握"
     assert chapter["attempts"][0]["assisted"] == 1
     before = chapter["state"]
     action(client, s["id"], "skip")

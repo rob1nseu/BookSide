@@ -478,6 +478,7 @@ small,
 .options input {
   margin: 0;
 }
+.options .prose p { margin: 0; }
 .task-actions {
   display: flex;
   align-items: center;

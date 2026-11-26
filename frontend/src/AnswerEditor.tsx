@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState } from "react";
 import type { Question } from "./types";
+import { Prose } from "./components";
 const AnswerImage = lazy(() => import("./AnswerImage"));
 export type Answer = {
   text: string;
@@ -68,7 +69,7 @@ export default function AnswerEditor({
                 checked={value.selected_option === option}
                 onChange={() => update({ selected_option: option })}
               />
-              {option}
+              <Prose>{option}</Prose>
             </label>
           ))}
         </fieldset>

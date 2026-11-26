@@ -2,7 +2,21 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
 import { Prose, Brand } from "./components";
 import { normalizeMath } from "./math";
+import AnswerEditor from "./AnswerEditor";
 describe("safe readable content", () => {
+  it("keeps absolute values inside math table cells", async () => {
+    const { container } = render(<Prose>{String.raw`| 函数 | 定义域 |
+| --- | --- |
+| $x^2,\cos x,|x|$ | $\mathbb{R}$ |`}</Prose>);
+    await waitFor(() => expect(container.querySelectorAll(".katex")).toHaveLength(2), {timeout: 5000});
+    expect(container.querySelectorAll("tbody td")).toHaveLength(2);
+    expect(container.querySelector(".katex-error")).toBeNull();
+  });
+  it("renders formulas in selectable answer options", async () => {
+    const { container } = render(<AnswerEditor question={{id:"formula-option",position:0,kind:"choice",prompt:"选择",options:[String.raw`$A\setminus B=A\cap B^{c}$`],unit:""}} spaceId="math-test" disabled={false} onSubmit={async () => true} />);
+    await waitFor(() => expect(container.querySelector("label .katex")).not.toBeNull());
+    expect(screen.getByRole("radio")).toBeInTheDocument();
+  });
   it("renders semantic headings and does not execute model HTML", async () => {
     render(
       <Prose>

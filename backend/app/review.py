@@ -34,7 +34,7 @@ def material(store, space_id, root):
     for section in sections:
         pages = retrieve(store, space_id, section["title"], section, limit=2)
         # Same-page sections can share a source id: retain the independently clipped text.
-        evidence.extend(dict(p, text=p["text"][:1800], notes=p["notes"][:500]) for p in pages)
+        evidence.extend(dict(p, chapter_id=section["id"], text=p["text"][:1800], notes=p["notes"][:500]) for p in pages)
         outline.append({"id": section["id"], "title": section["title"], "sources": [p["id"] for p in pages]})
     return outline, evidence
 
@@ -155,7 +155,16 @@ async def run_review(app, run_id, action):
         if action.action == "review_map":
             if not map_row:
                 generated, usage = await provider.generate("review_map", context, progress)
-                payload = validate_map(generated, sections, evidence)
+                try:
+                    payload = validate_map(generated, sections, evidence)
+                except ModelError as error:
+                    await progress("正在核对导图的小节与引用对应关系…")
+                    repair_context = dict(context, previous_map=generated,
+                        validation_error=str(error),
+                        request="修正导图：chapter_id 必须逐字复制 sections.id；sources 只能选该小节自己的 sources，不能使用其他小节或编造编号。保留有原文支持的知识点，覆盖有正文的小节。")
+                    generated, repair_usage = await provider.generate("review_map", repair_context, progress)
+                    usage = {"initial": usage, "repair": repair_usage}
+                    payload = validate_map(generated, sections, evidence)
         else:
             if not map_row:
                 raise ModelError("请先生成章节导图")

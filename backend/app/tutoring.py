@@ -43,21 +43,21 @@ def recompute(db, chapter_id):
         (chapter_id, chapter_id),
     ).fetchall()
     passed = 0
-    weak = False
+    attempted = False
     for q in questions:
         rows = db.execute(
             "SELECT * FROM attempts WHERE question_id=? AND disputed=0 ORDER BY created DESC", (q["id"],)
         ).fetchall()
-        if any(json.loads(r["feedback"])["verdict"] == "correct" and not r["assisted"] for r in rows):
+        if rows:
+            attempted = True
+        if rows and json.loads(rows[0]["feedback"])["verdict"] == "correct" and not rows[0]["assisted"]:
             passed += 1
-        elif any(json.loads(r["feedback"])["verdict"] in ("incorrect", "partial") for r in rows):
-            weak = True
     state = (
-        "通过当前检查" if questions and passed == len(questions) else "需要巩固" if weak else "已学习，待验证"
+        "已掌握" if questions and passed * 2 > len(questions) else "需要巩固" if attempted else "已学习，待验证"
     )
     db.execute(
-        "UPDATE chapters SET state=?,passed_at=? WHERE id=?",
-        (state, now() if state == "通过当前检查" else None, chapter_id),
+        "UPDATE chapters SET state=?,passed_at=CASE WHEN ? IS NULL THEN NULL ELSE COALESCE(passed_at,?) END WHERE id=?",
+        (state, now() if state == "已掌握" else None, now(), chapter_id),
     )
 
 

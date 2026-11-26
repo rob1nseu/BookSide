@@ -14,7 +14,7 @@ def test_training_new_plan_can_pass_without_rewriting_old_assisted_attempt(clien
     action(client, s["id"], "next")
     action(client, s["id"], "answer", text="结合定义与适用条件解释")
     detail = client.get("/api/spaces/" + s["id"]).json()["chapters"][0]
-    assert detail["state"] == "通过当前检查"
+    assert detail["state"] == "已掌握"
     assert detail["attempts"][0]["assisted"] == 1
 
 

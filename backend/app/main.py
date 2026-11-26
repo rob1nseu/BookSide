@@ -4,7 +4,6 @@ import json
 import os
 import sqlite3
 import base64
-from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlparse
@@ -59,6 +58,11 @@ def create_app(data_dir=None, provider=None):
 
     @asynccontextmanager
     async def lifespan(app):
+        # Re-evaluate existing learning records using the current majority rule.
+        with store.connect() as db:
+            ids = db.execute("SELECT DISTINCT chapter_id FROM attempts").fetchall()
+            for row in ids:
+                recompute(db, row["chapter_id"])
         store.write(
             "UPDATE runs SET status='interrupted',error='服务重启中断了生成，请重试' WHERE status='running'"
         )
@@ -247,11 +251,6 @@ def create_app(data_dir=None, provider=None):
     @app.get("/api/spaces/{space_id}")
     def detail(space_id: str, compact: bool = False):
         space = space_exists(space_id)
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
-        store.write(
-            "UPDATE chapters SET state='待复查' WHERE space_id=? AND state='通过当前检查' AND passed_at<?",
-            (space_id, cutoff),
-        )
         chapters = store.all("SELECT * FROM chapters WHERE space_id=? ORDER BY position", (space_id,))
         for chapter in chapters:
             if compact and chapter["id"] != space["current_chapter"]:
