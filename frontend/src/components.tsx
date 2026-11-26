@@ -13,10 +13,16 @@ export function Brand() {
     </div>
   );
 }
-export function Prose({ children }: { children: string }) {
+export function Prose({
+  children,
+  inline = false,
+}: {
+  children: string;
+  inline?: boolean;
+}) {
   return (
-    <Suspense fallback={<p className="prose">{children}</p>}>
-      <MarkdownView>{children}</MarkdownView>
+    <Suspense fallback={<span className="prose">{children}</span>}>
+      <MarkdownView inline={inline}>{children}</MarkdownView>
     </Suspense>
   );
 }

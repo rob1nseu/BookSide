@@ -10,6 +10,7 @@ import {
   type Node,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { Prose } from "./components";
 export type Concept = {
   id: string;
   parent_id: string | null;
@@ -35,7 +36,9 @@ const ConceptCard = memo(function ConceptCard({
   return (
     <div className={"concept-node " + (data.selected ? "selected" : "")}>
       <Handle type="target" position={Position.Left} />
-      <strong>{data.label}</strong>
+      <strong>
+        <Prose inline>{data.label}</Prose>
+      </strong>
       <small>{data.state}</small>
       {data.hasChildren && (
         <button
@@ -132,7 +135,7 @@ export default function MindMap({
             aria-pressed={selected === c.id}
             onClick={() => onSelect(c.id)}
           >
-            {c.label}
+            <Prose inline>{c.label}</Prose>
             <small>{states[c.id] || "未验证"}</small>
           </button>
           {concepts.some((n) => n.parent_id === c.id) && (
@@ -152,26 +155,28 @@ export default function MindMap({
           {outline ? "图形视图" : "层级列表"}
         </button>
       </div>
-      <div className={"map-canvas " + (outline ? "hidden" : "")}>
-        <ReactFlow
-          nodes={graph.nodes}
-          edges={graph.edges}
-          nodeTypes={nodeTypes}
-          nodesDraggable={false}
-          nodesConnectable={false}
-          deleteKeyCode={null}
-          minZoom={0.2}
-          maxZoom={1.8}
-          fitView
-          onNodeClick={(_, n) => {
-            if (n.id !== "__root") onSelect(n.id);
-          }}
-        >
-          <Background />
-          <Controls showInteractive={false} />
-          <Fit signature={graph.nodes.map((n) => n.id).join(",")} />
-        </ReactFlow>
-      </div>
+      {!outline && (
+        <div className="map-canvas">
+          <ReactFlow
+            nodes={graph.nodes}
+            edges={graph.edges}
+            nodeTypes={nodeTypes}
+            nodesDraggable={false}
+            nodesConnectable={false}
+            deleteKeyCode={null}
+            minZoom={0.2}
+            maxZoom={1.8}
+            fitView
+            onNodeClick={(_, n) => {
+              if (n.id !== "__root") onSelect(n.id);
+            }}
+          >
+            <Background />
+            <Controls showInteractive={false} />
+            <Fit signature={graph.nodes.map((n) => n.id).join(",")} />
+          </ReactFlow>
+        </div>
+      )}
       <ul className={"map-outline " + (outline ? "shown" : "")}>
         {tree(null)}
       </ul>

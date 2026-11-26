@@ -1,6 +1,5 @@
-@import url("https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&display=swap");
 :root {
-  font-family: Inter, "Microsoft YaHei", system-ui, sans-serif;
+  font-family: "Noto Sans SC Variable", sans-serif;
   color: #243b32;
   background: #fafbf7;
   font-synthesis: none;
@@ -9,7 +8,7 @@
   --yellow: #f5d977;
   --line: #d7dfd6;
   --muted: #79857c;
-  --serif: "Noto Serif SC", "Songti SC", SimSun, serif;
+  --serif: "Noto Serif SC Variable", serif;
 }
 * {
   box-sizing: border-box;

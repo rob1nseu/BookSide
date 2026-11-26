@@ -298,6 +298,35 @@ def create_app(data_dir=None, provider=None):
             ),
         }
 
+    @app.get("/api/spaces/{space_id}/resources")
+    def resources(space_id: str, document_id: str, topic: str | None = None):
+        from .resources import recommend, TOPICS
+
+        space_exists(space_id)
+        doc = store.one(
+            "SELECT d.* FROM documents d JOIN space_documents sd ON sd.document_id=d.id WHERE sd.space_id=? AND d.id=?",
+            (space_id, document_id),
+        )
+        if not doc:
+            raise HTTPException(404, "教材不属于当前空间")
+        if topic and topic not in TOPICS:
+            raise HTTPException(422, "暂不支持该方向")
+        chapters = store.all(
+            "SELECT title FROM chapters WHERE space_id=? AND document_id=? ORDER BY position LIMIT 200",
+            (space_id, document_id),
+        )
+        pages = store.all(
+            "SELECT substr(text,1,2000) AS text FROM pages WHERE document_id=? ORDER BY number LIMIT 6",
+            (document_id,),
+        )
+        return {
+            "document_id": document_id,
+            "document_name": doc["name"],
+            **recommend(
+                doc["name"], " ".join(c["title"] for c in chapters), " ".join(p["text"] for p in pages), topic
+            ),
+        }
+
     @app.get("/api/spaces/{space_id}/review")
     def review_detail(space_id: str, chapter_id: str):
         from .review import detail as review_data

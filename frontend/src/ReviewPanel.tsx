@@ -144,7 +144,9 @@ export default function ReviewPanel({
       <div className="review-heading">
         <div>
           <small>考前复习 · 先看结构，再用题目验证</small>
-          <h1>{data.title}</h1>
+          <h1>
+            <Prose inline>{data.title}</Prose>
+          </h1>
         </div>
         {data.map && (
           <div className="review-tabs">
@@ -194,7 +196,9 @@ export default function ReviewPanel({
               </Suspense>
               {node ? (
                 <article className="concept-detail">
-                  <h2>{node.label}</h2>
+                  <h2>
+                    <Prose inline>{node.label}</Prose>
+                  </h2>
                   <Prose>{node.summary}</Prose>
                   <div className="citations">
                     {node.sources.map((id) => (
@@ -349,9 +353,11 @@ export default function ReviewPanel({
                         ))}
                       </div>
                       {attempt.feedback.missing.map((m) => (
-                        <p key={m}>需补充：{m}</p>
+                        <div key={m}>
+                          需补充：<Prose>{m}</Prose>
+                        </div>
                       ))}
-                      <p>{attempt.feedback.next_step}</p>
+                      <Prose>{attempt.feedback.next_step}</Prose>
                       <button
                         onClick={() => {
                           setSelected(q.node_id);
@@ -385,7 +391,7 @@ export default function ReviewPanel({
                   {["本轮已验证", "需巩固", "未验证"].map((state) => (
                     <div key={state}>
                       <h3>{state}</h3>
-                      <p>
+                      <Prose>
                         {data
                           .map!.nodes.filter(
                             (n) =>
@@ -393,7 +399,7 @@ export default function ReviewPanel({
                           )
                           .map((n) => n.label)
                           .join("、") || "暂无"}
-                      </p>
+                      </Prose>
                     </div>
                   ))}
                   <p>

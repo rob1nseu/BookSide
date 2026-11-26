@@ -2,7 +2,10 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "katex/dist/katex.min.css";
+import "@fontsource-variable/noto-serif-sc";
+import "@fontsource-variable/noto-sans-sc";
 import "./style.css";
+import "./editorial.css";
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />

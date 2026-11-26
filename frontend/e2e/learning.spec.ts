@@ -15,6 +15,55 @@ test.beforeAll(() => {
 });
 test.afterAll(() => rmSync(fixtures, { recursive: true, force: true }));
 
+test("verified resources match each textbook, allow correction and use local editorial fonts", async ({
+  page,
+}) => {
+  const errors = watchErrors(page);
+  await createSpace(page, "calculus.pdf");
+  await page.getByText("教材之外", { exact: false }).click();
+  await expect(page.getByRole("link", { name: /MIT 18.01SC/ })).toHaveAttribute(
+    "href",
+    "https://ocw.mit.edu/courses/18-01sc-single-variable-calculus-fall-2010/",
+  );
+  await page.getByLabel("拓展方向").selectOption("机器学习");
+  await expect(page.getByRole("link", { name: /跟李沐学 AI/ })).toHaveAttribute(
+    "href",
+    "https://space.bilibili.com/1567748478",
+  );
+  await expect(
+    page.getByRole("link", { name: /动手学深度学习/ }),
+  ).toHaveAttribute("rel", "noopener noreferrer");
+  await page
+    .locator(".resource-row")
+    .first()
+    .getByText("学习建议与来源")
+    .click();
+  await expect(page.locator(".resource-row").first()).toContainText(
+    "2026-11-26",
+  );
+  await page.evaluate(() => document.fonts.ready);
+  expect(
+    await page.evaluate(() =>
+      document.fonts.check('16px "Noto Serif SC Variable"', "学习"),
+    ),
+  ).toBeTruthy();
+  await screenshot(page, "resources-desktop");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect
+    .poll(async () =>
+      page
+        .locator(".sidebar")
+        .evaluate((el) => el.getBoundingClientRect().right),
+    )
+    .toBeLessThanOrEqual(0);
+  await page
+    .locator(".resources")
+    .evaluate((el) => el.scrollIntoView({ block: "start" }));
+  await viewportFits(page);
+  await screenshot(page, "resources-mobile");
+  expect(errors).toEqual([]);
+});
+
 function watchErrors(page: Page) {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));

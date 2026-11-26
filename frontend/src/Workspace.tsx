@@ -8,6 +8,7 @@ import AnswerEditor from "./AnswerEditor";
 import Inquiry from "./Inquiry";
 const PdfReader = lazy(() => import("./PdfReader"));
 const ReviewPanel = lazy(() => import("./ReviewPanel"));
+const Resources = lazy(() => import("./Resources"));
 
 export default function Workspace({
   space,
@@ -223,8 +224,14 @@ export default function Workspace({
             <>
               <div className="task-heading">
                 <div>
-                  <h1>{chapter.title}</h1>
-                  <p>{chapter.lesson?.objective || "一次只学懂一个小问题。"}</p>
+                  <h1>
+                    <Prose inline>{chapter.title}</Prose>
+                  </h1>
+                  <p>
+                    <Prose inline>
+                      {chapter.lesson?.objective || "一次只学懂一个小问题。"}
+                    </Prose>
+                  </p>
                 </div>
                 <button
                   className="icon"
@@ -393,9 +400,11 @@ export default function Workspace({
                           <Prose>{lastAttempt.feedback.explanation}</Prose>
                           {citations(lastAttempt.feedback.sources)}
                           {lastAttempt.feedback.missing.map((m) => (
-                            <p key={m}>需补充：{m}</p>
+                            <div key={m}>
+                              需补充：<Prose>{m}</Prose>
+                            </div>
                           ))}
-                          <p>{lastAttempt.feedback.next_step}</p>
+                          <Prose>{lastAttempt.feedback.next_step}</Prose>
                           <button
                             disabled={busy}
                             onClick={async () => {
@@ -467,6 +476,13 @@ export default function Workspace({
                   {citations(run.result.sources)}
                 </section>
               )}
+              <Suspense fallback={null}>
+                <Resources
+                  key={chapter.document_id}
+                  spaceId={space.id}
+                  documentId={chapter.document_id}
+                />
+              </Suspense>
               <details className="learning-tools">
                 <summary>学习记录与准备选项</summary>
                 <button

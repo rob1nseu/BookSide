@@ -80,6 +80,19 @@ uv run python scripts/make_samples.py
 
 ## 测试
 
+本次更新增加本地字体依赖，拉取后先在 `frontend` 执行 `npm.cmd ci`，再重新构建启动。
+“教材之外 · 精选拓展”位于学习工作台下部，打开后按当前教材匹配；可手动修正方向，每条资源可查看推荐理由、先修要求和原始来源。当前目录覆盖 8 个主题，未匹配时会明确提示。
+
+检查本地已保存内容中的公式（只读，不输出正文；要求 Node.js 24）：
+
+```powershell
+cd frontend
+node scripts/audit-math.mjs
+cd ..
+```
+
+可在脚本后传入其他数据目录路径。非零退出表示存在解析失败或待核对的定界符；不会自动改写课程记录。
+
 ```powershell
 uv run pytest -q
 uv run ruff check backend scripts desktop
