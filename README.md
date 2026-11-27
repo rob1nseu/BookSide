@@ -2,7 +2,7 @@
 
 <img src="frontend/public/bookside-banner.png" alt="Bookside — 奶龙读书与像素字标" width="680">
 
-<h1>Bookside · 书边</h1>
+<h1>书边 · Bookside Tutor</h1>
 
 <p><strong>打开课本，就从这一节开始。</strong></p>
 <p>A lightweight, textbook-centered learning agent.</p>
@@ -29,9 +29,14 @@
 **上传教材 → 章节讲解 → 练习反馈 → 导图复习**
 
 <p align="center">
-  <img src="frontend/public/learning-preview.png" alt="Bookside 实机学习示例：微分中值定理的章节讲解、数学公式与教材拓展资源" width="1200">
+  <img src="frontend/public/learning-preview.png" alt="Bookside 实机学习示例：微分中值定理的章节讲解、数学公式与教材拓展资源" width="1000">
   <br>
-  <sub>章节导航、公式讲解与精选拓展，在同一处展开。</sub>
+  <sub>章节导航、公式讲解与精选拓展</sub>
+
+</p><p align="center">
+  <img src="frontend/public/mindmap-exercise.png" alt="Bookside 考前复习示例：微分中值定理思维导图、洛必达法则习题与讲义预览功能" width="1000">
+  <br>
+  <sub>思维导图串联概念、结合练习复习</sub>
 </p>
 
 | 优势 | 你可以这样学习 |
