@@ -1,5 +1,5 @@
 from typing import Literal
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, computed_field, model_validator
 
 
 class Question(BaseModel):
@@ -55,9 +55,27 @@ class Reply(BaseModel):
     supplement: bool = False
 
 
+class AuditIssue(BaseModel):
+    kind: Literal["error", "missing_evidence"]
+    location: str = Field(min_length=1, max_length=300)
+    problem: str = Field(min_length=1, max_length=1000)
+
+
 class Audit(BaseModel):
-    verdict: Literal["accept", "reject", "uncertain"]
     reason: str = Field(min_length=1, max_length=2000)
+    issues: list[AuditIssue] = Field(
+        max_length=8,
+        description="核对后仍未解决的具体问题；已排除的疑点不得列入，没有问题时必须返回空数组。",
+    )
+
+    @computed_field
+    @property
+    def verdict(self) -> Literal["accept", "reject", "uncertain"]:
+        # A separately generated verdict can contradict the actual findings.
+        # Missing findings must fail validation, never silently mean approval.
+        if any(issue.kind == "error" for issue in self.issues):
+            return "reject"
+        return "uncertain" if self.issues else "accept"
 
 
 class Transcription(BaseModel):
